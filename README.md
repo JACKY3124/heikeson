@@ -18,28 +18,40 @@ hackathon-platform/
 └── README.md
 ```
 
+## 快速启动（推荐）
+
+**Windows 用户**：双击根目录下的 `start-all.bat` 即可一键启动后端和前端服务。
+
+启动后访问：
+- 前端：`http://localhost:5173`
+- 后端：`http://localhost:8080`
+
+**注意**：首次运行需确保 MySQL 已启动，并执行数据库初始化脚本（见下方）。
+
+---
+
 ## 本地运行
 
 ### 前置要求
 - JDK 8+
-- MySQL 9.7
+- MySQL 9.7（需提前启动服务）
 - Node.js 18+
-- Maven 3.9+
+- Maven 3.9+（已配置在 `D:\tools\apache-maven-3.9.9`）
 
-### 数据库
+### 数据库初始化
 ```bash
 # 连接 MySQL 后执行建库脚本
 mysql -u root -p < sql/init.sql
 ```
 
-### 启动后端
+### 手动启动后端
 ```bash
 cd backend
 mvn spring-boot:run
 # 访问 http://localhost:8080
 ```
 
-### 启动前端
+### 手动启动前端
 ```bash
 cd frontend
 npm install
