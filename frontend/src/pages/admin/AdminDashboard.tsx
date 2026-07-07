@@ -4,6 +4,7 @@ import { Settings, Users, Trophy, BarChart3, FileText, CheckCircle, RefreshCw, S
 import { useAppStore } from '@/store';
 import type { ScoringConfig, UserRole, Hackathon, User } from '@/types';
 import { Modal } from '@/components/ui';
+import { getCompetitionStatus, validateDateOrder } from '@/utils/helpers';
 
 const roleConfig: Partial<Record<UserRole, { label: string; color: string }>> = {
   player: { label: '选手', color: 'text-blue-400 bg-blue-500/20' },
@@ -197,7 +198,7 @@ export default function AdminDashboard() {
               <div className="glass rounded-xl p-6">
                 <h2 className="text-xl font-semibold text-white mb-4">进行中的竞赛</h2>
                 <div className="space-y-3">
-                  {hackathons.filter(h => h.status === 'ongoing').map(hackathon => (
+                  {hackathons.filter(h => h.status === 'competition_running').map(hackathon => (
                     <div key={hackathon.id} className="p-3 bg-slate-800/50 rounded-lg">
                       <div className="flex items-center justify-between mb-2">
                         <h3 className="text-white font-medium">{hackathon.title}</h3>
@@ -209,7 +210,7 @@ export default function AdminDashboard() {
                       </div>
                     </div>
                   ))}
-                  {hackathons.filter(h => h.status === 'ongoing').length === 0 && (
+                  {hackathons.filter(h => h.status === 'competition_running').length === 0 && (
                     <p className="text-slate-400 text-center py-4">暂无进行中的竞赛</p>
                   )}
                 </div>
@@ -229,8 +230,8 @@ export default function AdminDashboard() {
                           <p className="text-slate-400 text-sm">{teams.find(t => t.id === submission.teamId)?.name}</p>
                         </div>
                         <button
-                          onClick={() => handleRunAIScore(submission.id)}
-                          disabled={runningAIScore === submission.id}
+                          onClick={() => handleRunAIScore(String(submission.id))}
+                          disabled={runningAIScore === String(submission.id)}
                           className="flex items-center gap-1 px-3 py-1 rounded-lg bg-purple-500/20 text-purple-400 hover:bg-purple-500/30 transition-colors text-sm"
                         >
                           <Cpu className="w-4 h-4" />
@@ -307,7 +308,7 @@ export default function AdminDashboard() {
                           <div className="flex items-center gap-2">
                             <select
                               value={u.role}
-                              onChange={(e) => setConfirmRoleChange({ userId: u.id, newRole: e.target.value as UserRole })}
+                              onChange={(e) => setConfirmRoleChange({ userId: String(u.id), newRole: e.target.value as UserRole })}
                               className="px-3 py-1.5 bg-slate-700 border border-slate-600 rounded-lg text-white text-sm appearance-none cursor-pointer focus:outline-none focus:border-blue-500 transition-colors"
                             >
                               <option value="player">选手</option>
@@ -372,14 +373,16 @@ export default function AdminDashboard() {
                 <h2 className="text-xl font-semibold text-white">竞赛管理</h2>
                 <button
                   onClick={() => {
+                    const startDate = new Date().toISOString().split('T')[0];
+                    const endDate = new Date(Date.now() + 3 * 86400000).toISOString().split('T')[0];
                     const defaults: Hackathon = {
                       id: `hack-${Date.now()}`,
                       title: '',
                       description: '',
                       coverImage: '',
-                      startDate: new Date().toISOString().split('T')[0],
-                      endDate: new Date(Date.now() + 3 * 86400000).toISOString().split('T')[0],
-                      status: 'upcoming',
+                      startDate,
+                      endDate,
+                      status: 'draft',
                       prizes: [],
                       categories: [],
                       maxParticipants: 100,
@@ -390,6 +393,11 @@ export default function AdminDashboard() {
                       rules: [],
                       minTeamSize: 1,
                       maxTeamSize: 5,
+                      registrationOpenTime: startDate,
+                      registrationDeadline: startDate,
+                      submissionDeadline: endDate,
+                      judgingDeadline: endDate,
+                      announcementTime: endDate,
                     };
                     setEditingHackathon(defaults);
                     setHackathonForm({ ...defaults });
@@ -414,12 +422,18 @@ export default function AdminDashboard() {
                       </div>
                       <div className="flex items-center gap-2 flex-shrink-0">
                         <span className={`px-3 py-1 rounded-full text-xs ${
-                          hackathon.status === 'ongoing' ? 'bg-green-500/20 text-green-400' :
-                          hackathon.status === 'upcoming' ? 'bg-blue-500/20 text-blue-400' :
-                          'bg-slate-500/20 text-slate-400'
+                          getCompetitionStatus(hackathon) === 'competition_running' ? 'bg-green-500/20 text-green-400' :
+                          getCompetitionStatus(hackathon) === 'registration_open' ? 'bg-amber-500/20 text-amber-400' :
+                          getCompetitionStatus(hackathon) === 'judging' ? 'bg-purple-500/20 text-purple-400' :
+                          getCompetitionStatus(hackathon) === 'results_announced' ? 'bg-slate-500/20 text-slate-400' :
+                          getCompetitionStatus(hackathon) === 'draft' ? 'bg-gray-500/20 text-gray-400' :
+                          'bg-blue-500/20 text-blue-400'
                         }`}>
-                          {hackathon.status === 'ongoing' ? '进行中' :
-                           hackathon.status === 'upcoming' ? '即将开始' : '已结束'}
+                          {getCompetitionStatus(hackathon) === 'competition_running' ? '进行中' :
+                           getCompetitionStatus(hackathon) === 'registration_open' ? '报名中' :
+                           getCompetitionStatus(hackathon) === 'judging' ? '评审中' :
+                           getCompetitionStatus(hackathon) === 'results_announced' ? '已结束' :
+                           getCompetitionStatus(hackathon) === 'draft' ? '草稿' : '报名未开始'}
                         </span>
                         <button
                           onClick={() => {
@@ -448,7 +462,7 @@ export default function AdminDashboard() {
                       <span>参赛者: {hackathon.currentParticipants}/{hackathon.maxParticipants}</span>
                       <span>团队: {teams.filter(t => t.hackathonId === hackathon.id).length}</span>
                       <span>作品: {submissions.filter(s => s.hackathonId === hackathon.id).length}</span>
-                      <span>奖金: ¥{hackathon.prizes.reduce((sum, p) => sum + p.amount, 0).toLocaleString()}</span>
+                      <span>奖金: ¥{(hackathon.prizes || []).reduce((sum, p) => sum + p.amount, 0).toLocaleString()}</span>
                     </div>
                   </div>
                 ))}
@@ -584,11 +598,11 @@ export default function AdminDashboard() {
                           </div>
                         ) : (
                           <button
-                            onClick={() => handleRunAIScore(submission.id)}
-                            disabled={runningAIScore === submission.id}
+                            onClick={() => handleRunAIScore(String(submission.id))}
+                            disabled={runningAIScore === String(submission.id)}
                             className="flex items-center gap-2 px-4 py-2 rounded-lg bg-purple-500/20 text-purple-400 hover:bg-purple-500/30 transition-colors"
                           >
-                            <RefreshCw className={`w-4 h-4 ${runningAIScore === submission.id ? 'animate-spin' : ''}`} />
+                            <RefreshCw className={`w-4 h-4 ${runningAIScore === String(submission.id) ? 'animate-spin' : ''}`} />
                             {runningAIScore === submission.id ? '评分中...' : 'AI评分'}
                           </button>
                         )}
@@ -636,7 +650,7 @@ export default function AdminDashboard() {
                 <h2 className="text-xl font-semibold text-white mb-4">竞赛统计</h2>
                 <div className="space-y-4">
                   {hackathons.map(hackathon => {
-                    const leaderboard = getLeaderboardByHackathon(hackathon.id);
+                    const leaderboard = getLeaderboardByHackathon(String(hackathon.id));
                     const avgScore = leaderboard.length > 0
                       ? Math.round(leaderboard.reduce((sum, l) => sum + l.score, 0) / leaderboard.length * 10) / 10
                       : 0;
@@ -721,7 +735,7 @@ export default function AdminDashboard() {
               </button>
               <button
                 onClick={() => {
-                  deleteUser(deletingUser.id);
+                  deleteUser(String(deletingUser.id));
                   setDeletingUser(null);
                 }}
                 className="flex-1 py-2.5 rounded-xl bg-red-500/20 text-red-400 font-semibold hover:bg-red-500/30 transition-colors"
@@ -814,17 +828,74 @@ export default function AdminDashboard() {
 
             <div className="grid grid-cols-2 gap-4">
               <div>
+                <label className="block text-sm font-medium text-slate-300 mb-2">报名开始时间</label>
+                <input
+                  type="datetime-local"
+                  value={hackathonForm.registrationOpenTime ? new Date(hackathonForm.registrationOpenTime).toISOString().slice(0, 16) : ''}
+                  onChange={(e) => setHackathonForm(prev => ({ ...prev, registrationOpenTime: e.target.value }))}
+                  className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white focus:outline-none focus:border-blue-500 transition-colors"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-300 mb-2">报名截止时间</label>
+                <input
+                  type="datetime-local"
+                  value={hackathonForm.registrationDeadline ? new Date(hackathonForm.registrationDeadline).toISOString().slice(0, 16) : ''}
+                  onChange={(e) => setHackathonForm(prev => ({ ...prev, registrationDeadline: e.target.value }))}
+                  className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white focus:outline-none focus:border-blue-500 transition-colors"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-300 mb-2">作品提交截止时间</label>
+                <input
+                  type="datetime-local"
+                  value={hackathonForm.submissionDeadline ? new Date(hackathonForm.submissionDeadline).toISOString().slice(0, 16) : ''}
+                  onChange={(e) => setHackathonForm(prev => ({ ...prev, submissionDeadline: e.target.value }))}
+                  className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white focus:outline-none focus:border-blue-500 transition-colors"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-300 mb-2">评审截止时间</label>
+                <input
+                  type="datetime-local"
+                  value={hackathonForm.judgingDeadline ? new Date(hackathonForm.judgingDeadline).toISOString().slice(0, 16) : ''}
+                  onChange={(e) => setHackathonForm(prev => ({ ...prev, judgingDeadline: e.target.value }))}
+                  className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white focus:outline-none focus:border-blue-500 transition-colors"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-300 mb-2">榜单公示时间</label>
+                <input
+                  type="datetime-local"
+                  value={hackathonForm.announcementTime ? new Date(hackathonForm.announcementTime).toISOString().slice(0, 16) : ''}
+                  onChange={(e) => setHackathonForm(prev => ({ ...prev, announcementTime: e.target.value }))}
+                  className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white focus:outline-none focus:border-blue-500 transition-colors"
+                />
+              </div>
+              <div>
                 <label className="block text-sm font-medium text-slate-300 mb-2">状态</label>
                 <select
-                  value={hackathonForm.status || 'upcoming'}
+                  value={hackathonForm.status || 'draft'}
                   onChange={(e) => setHackathonForm(prev => ({ ...prev, status: e.target.value as Hackathon['status'] }))}
                   className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white appearance-none focus:outline-none focus:border-blue-500 transition-colors"
                 >
-                  <option value="upcoming">即将开始</option>
-                  <option value="ongoing">进行中</option>
-                  <option value="completed">已结束</option>
+                  <option value="draft">草稿</option>
+                  <option value="registration_open">报名中</option>
+                  <option value="registration_closed">报名已结束</option>
+                  <option value="competition_running">进行中</option>
+                  <option value="judging">评审中</option>
+                  <option value="results_announced">已结束</option>
                 </select>
               </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-slate-300 mb-2">最大参赛者</label>
                 <input
@@ -834,9 +905,6 @@ export default function AdminDashboard() {
                   className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white focus:outline-none focus:border-blue-500 transition-colors"
                 />
               </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-slate-300 mb-2">地点</label>
                 <input
@@ -988,8 +1056,23 @@ export default function AdminDashboard() {
                     setHackathonError('请输入竞赛名称');
                     return;
                   }
+                  
+                  const dateError = validateDateOrder({
+                    registrationOpenTime: hackathonForm.registrationOpenTime || '',
+                    registrationDeadline: hackathonForm.registrationDeadline || '',
+                    startDate: hackathonForm.startDate || '',
+                    submissionDeadline: hackathonForm.submissionDeadline || '',
+                    judgingDeadline: hackathonForm.judgingDeadline || '',
+                    announcementTime: hackathonForm.announcementTime || '',
+                    endDate: hackathonForm.endDate || '',
+                  }, ['registrationOpenTime', 'registrationDeadline', 'startDate', 'submissionDeadline', 'judgingDeadline', 'announcementTime', 'endDate']);
+                  
+                  if (dateError) {
+                    setHackathonError(dateError);
+                    return;
+                  }
+                  
                   setHackathonError('');
-                  // 判断是新增还是编辑
                   const isCreate = !editingHackathon?.title;
                   if (isCreate) {
                     createHackathon(hackathonForm);
@@ -1034,7 +1117,7 @@ export default function AdminDashboard() {
               </button>
               <button
                 onClick={() => {
-                  deleteHackathon(deletingHackathon.id);
+                  deleteHackathon(String(deletingHackathon.id));
                   setDeletingHackathon(null);
                 }}
                 className="flex-1 py-2.5 rounded-xl bg-red-500/20 text-red-400 font-semibold hover:bg-red-500/30 transition-colors"

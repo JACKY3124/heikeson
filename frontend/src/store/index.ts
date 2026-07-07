@@ -189,12 +189,12 @@ export const useAppStore = create<AppState>((set, get) => ({
     try {
       const announcements = await getAnnouncements();
       set({
-        announcements: announcements.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()),
+        announcements: announcements.sort((a, b) => new Date(b.date || '').getTime() - new Date(a.date || '').getTime()),
       });
     } catch (error) {
       console.warn('公告刷新失败，使用本地 mock 数据', error);
       set(state => ({
-        announcements: [...state.announcements].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()),
+        announcements: [...state.announcements].sort((a, b) => new Date(b.date || '').getTime() - new Date(a.date || '').getTime()),
       }));
     }
   },
@@ -210,14 +210,16 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   // [API] 对接点：createHackathon 应改为 async，调用 createHackathonAPI
   createHackathon: (hackathon) => {
+    const startDate = hackathon.startDate || new Date().toISOString().split('T')[0];
+    const endDate = hackathon.endDate || new Date().toISOString().split('T')[0];
     const newHackathon: Hackathon = {
       id: `hack-${Date.now()}`,
       title: hackathon.title || '未命名竞赛',
       description: hackathon.description || '',
       coverImage: hackathon.coverImage || 'https://images.unsplash.com/photo-1677442136019-21780ecad995?w=1200&h=675&fit=crop',
-      startDate: hackathon.startDate || new Date().toISOString().split('T')[0],
-      endDate: hackathon.endDate || new Date().toISOString().split('T')[0],
-      status: hackathon.status || 'upcoming',
+      startDate,
+      endDate,
+      status: hackathon.status || 'draft',
       prizes: hackathon.prizes || [],
       categories: hackathon.categories || ['通用'],
       maxParticipants: hackathon.maxParticipants || 100,
@@ -228,6 +230,11 @@ export const useAppStore = create<AppState>((set, get) => ({
       rules: hackathon.rules || [],
       minTeamSize: hackathon.minTeamSize || 1,
       maxTeamSize: hackathon.maxTeamSize || 5,
+      registrationOpenTime: hackathon.registrationOpenTime || startDate,
+      registrationDeadline: hackathon.registrationDeadline || startDate,
+      submissionDeadline: hackathon.submissionDeadline || startDate,
+      judgingDeadline: hackathon.judgingDeadline || endDate,
+      announcementTime: hackathon.announcementTime || endDate,
     };
     set(state => ({
       hackathons: [...state.hackathons, newHackathon],
@@ -278,8 +285,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (!hackathon) return null;
 
     const members = [user, ...initialMembers.filter(m => m.id !== user.id)];
-    const minTeamSize = hackathon.minTeamSize;
-    const maxTeamSize = hackathon.maxTeamSize;
+    const minTeamSize = hackathon.minTeamSize ?? 1;
+    const maxTeamSize = hackathon.maxTeamSize ?? 5;
 
     if (members.length < minTeamSize) {
       return null;
@@ -293,16 +300,16 @@ export const useAppStore = create<AppState>((set, get) => ({
       name,
       description,
       members,
-      hackathonId,
+      hackathonId: String(hackathonId),
       createdAt: new Date().toISOString(),
       maxMembers: maxTeamSize,
       minMembers: minTeamSize,
-      leaderId: user.id,
+      leaderId: String(user.id),
     };
 
     set(state => ({
       teams: [...state.teams, newTeam],
-      user: { ...user, teamId: newTeam.id },
+      user: { ...user, teamId: String(newTeam.id) },
     }));
 
     return newTeam;
@@ -326,7 +333,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     const newRequest: JoinRequest = {
       id: `request-${Date.now()}`,
       teamId,
-      userId: user.id,
+      userId: String(user.id),
       userName: user.name,
       userEmail: user.email,
       status: 'pending',
@@ -441,7 +448,7 @@ export const useAppStore = create<AppState>((set, get) => ({
           const newMembers = t.members.filter(m => m.id !== user.id);
           let newLeaderId = t.leaderId;
           if (t.leaderId === user.id && newMembers.length > 0) {
-            newLeaderId = newMembers[0].id;
+            newLeaderId = String(newMembers[0].id);
           }
           return { ...t, members: newMembers, leaderId: newLeaderId };
         }
@@ -643,10 +650,10 @@ export const useAppStore = create<AppState>((set, get) => ({
       .filter(r => r.hackathonId === hackathonId)
       .map(record => {
         let team = teams.find(t => t.id === record.teamId);
-        if (!team && record.teamId.startsWith('reg_')) {
-          const userId = record.teamId.replace(/^reg_/, '').split('_')[0];
+        if (!team && String(record.teamId).startsWith('reg_')) {
+          const userId = String(record.teamId).replace(/^reg_/, '').split('_')[0];
           const submitter = users.find(u => u.id === userId);
-          if (submitter) team = { id: record.teamId, name: `${submitter.name} 的团队`, description: '', members: [submitter], hackathonId: record.hackathonId, createdAt: new Date().toISOString(), maxMembers: 5, minMembers: 1, leaderId: submitter.id };
+          if (submitter) team = { id: String(record.teamId), name: `${submitter.name} 的团队`, description: '', members: [submitter], hackathonId: String(record.hackathonId), createdAt: new Date().toISOString(), maxMembers: 5, minMembers: 1, leaderId: String(submitter.id) };
         }
         const submission = submissions.find(s => s.id === record.submissionId);
         if (!team || !submission) return null;
@@ -677,11 +684,11 @@ export const useAppStore = create<AppState>((set, get) => ({
       .map(submission => {
         let team = teams.find(t => t.id === submission.teamId);
         // 处理用户通过报名提交的作品（teamId 以 reg_ 开头）
-        if (!team && submission.teamId.startsWith('reg_')) {
-          const userId = submission.teamId.replace(/^reg_/, '').split('_')[0];
+        if (!team && String(submission.teamId).startsWith('reg_')) {
+          const userId = String(submission.teamId).replace(/^reg_/, '').split('_')[0];
           const submitter = users.find(u => u.id === userId);
           if (submitter) {
-            team = { id: submission.teamId, name: `${submitter.name} 的团队`, description: '', members: [submitter], hackathonId: submission.hackathonId, createdAt: submission.createdAt, maxMembers: 5, minMembers: 1, leaderId: submitter.id };
+            team = { id: String(submission.teamId), name: `${submitter.name} 的团队`, description: '', members: [submitter], hackathonId: String(submission.hackathonId), createdAt: submission.createdAt, maxMembers: 5, minMembers: 1, leaderId: String(submitter.id) };
           }
         }
         if (!team) return null;

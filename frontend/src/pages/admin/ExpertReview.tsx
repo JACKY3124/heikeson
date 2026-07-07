@@ -3,9 +3,10 @@ import { Link } from 'react-router-dom';
 import { Star, Clock, CheckCircle, Users, FileText, Send, History, Search, ExternalLink, Video } from 'lucide-react';
 import { useAppStore } from '@/store';
 import type { ExpertScore, CriteriaScore } from '@/types';
+import { getCompetitionStatus } from '@/utils/helpers';
 
 export default function ExpertReview() {
-  const { isAuthenticated, userRole, user, submissions, users, getPendingReviews, submitExpertScore, getScoreRecord, scoreRecords, teams } = useAppStore();
+  const { isAuthenticated, userRole, user, submissions, users, getPendingReviews, submitExpertScore, getScoreRecord, scoreRecords, teams, hackathons } = useAppStore();
   
   // [API] 对接点：页面挂载时获取待评审列表（当前使用 getPendingReviews() 从 store 计算）
   // 对接后：store 的 getPendingReviews 内部调用 getPendingReviewsAPI()
@@ -35,10 +36,10 @@ export default function ExpertReview() {
     .map(r => {
       const submission = submissions.find(s => s.id === r.submissionId);
       let team = submission ? teams.find(t => t.id === submission.teamId) : null;
-      if (!team && submission?.teamId?.startsWith('reg_')) {
-        const userId = submission.teamId.replace(/^reg_/, '').split('_')[0];
+      if (!team && submission?.teamId?.toString().startsWith('reg_')) {
+        const userId = String(submission.teamId).replace(/^reg_/, '').split('_')[0];
         const submitter = users.find(u => u.id === userId);
-        if (submitter) team = { id: submission.teamId, name: `${submitter.name} 的团队`, description: '', members: [submitter], hackathonId: submission.hackathonId, createdAt: submission.createdAt, maxMembers: 5, minMembers: 1, leaderId: submitter.id };
+        if (submitter) team = { id: String(submission.teamId), name: `${submitter.name} 的团队`, description: '', members: [submitter], hackathonId: String(submission.hackathonId), createdAt: submission.createdAt || '', maxMembers: 5, minMembers: 1, leaderId: String(submitter.id) };
       }
       const myScore = r.expertScores.find(es => es.expertId === user?.id);
       return { record: r, submission, team, myScore };
@@ -78,6 +79,18 @@ export default function ExpertReview() {
   const handleSubmitScore = () => {
     if (!selectedSubmission || !user) return;
 
+    const submission = submissions.find(s => s.id === selectedSubmission);
+    if (submission) {
+      const hackathon = hackathons.find(h => h.id === submission.hackathonId);
+      if (hackathon) {
+        const status = getCompetitionStatus(hackathon);
+        if (status !== 'judging') {
+          alert('当前竞赛不在评审阶段');
+          return;
+        }
+      }
+    }
+
     const criteriaScores: CriteriaScore[] = criteria.map(c => ({
       criteriaId: c.id,
       score: scores[c.id as keyof typeof scores],
@@ -89,9 +102,9 @@ export default function ExpertReview() {
     }, 0);
 
     const expertScore: ExpertScore = {
-      expertId: user.id,
+      expertId: String(user.id),
       expertName: user.name,
-      submissionId: selectedSubmission,
+      submissionId: String(selectedSubmission),
       scores: criteriaScores,
       totalScore: Math.round(totalScore * 10) / 10,
       comment,
@@ -161,14 +174,14 @@ export default function ExpertReview() {
               <h2 className="text-xl font-semibold text-white mb-4">待评审作品</h2>
               <div className="space-y-4">
                 {pendingReviews.map(({ submission, team }) => {
-                  const record = getScoreRecord(submission.id);
+                  const record = getScoreRecord(String(submission.id));
                   const hasScored = record?.expertScores.some(es => es.expertId === user?.id);
-                  const isSelected = selectedSubmission === submission.id;
+                  const isSelected = selectedSubmission === String(submission.id);
 
                   return (
                     <div
-                      key={submission.id}
-                      onClick={() => !hasScored && setSelectedSubmission(submission.id)}
+                      key={String(submission.id)}
+                      onClick={() => !hasScored && setSelectedSubmission(String(submission.id))}
                       className={`glass rounded-xl p-5 cursor-pointer transition-all ${
                         isSelected
                           ? 'border-blue-500 ring-2 ring-blue-500/30'
@@ -233,7 +246,7 @@ export default function ExpertReview() {
                 (() => {
                   const selectedSubmissionData = submissions.find(s => s.id === selectedSubmission);
                   if (!selectedSubmissionData) return null;
-                  const selectedRecord = getScoreRecord(selectedSubmissionData.id);
+                  const selectedRecord = getScoreRecord(String(selectedSubmissionData.id));
 
                   return (
                     <div className="glass rounded-xl p-6">

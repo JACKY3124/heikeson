@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom';
-import { Calendar, Users, MapPin, Award, Trophy } from 'lucide-react';
+import { Calendar, Users, MapPin, Award, Trophy, Clock } from 'lucide-react';
 import type { Hackathon } from '@/types';
+import { getCompetitionStatus, formatDate } from '@/utils/helpers';
 
 interface HackathonCardProps {
   hackathon: Hackathon;
@@ -8,38 +9,59 @@ interface HackathonCardProps {
 
 export default function HackathonCard({ hackathon }: HackathonCardProps) {
   const getStatusBadge = () => {
-    switch (hackathon.status) {
-      case 'ongoing':
+    const now = new Date().getTime();
+    const regOpenTime = new Date(hackathon.registrationOpenTime || hackathon.startDate || '').getTime();
+    const status = getCompetitionStatus(hackathon);
+
+    switch (status) {
+      case 'registration_open':
+        return (
+          <span className="px-3 py-1 rounded-full bg-amber-500/20 text-amber-400 text-sm font-medium flex items-center gap-1">
+            <Clock className="w-3 h-3" />
+            报名中
+          </span>
+        );
+      case 'registration_closed':
+        if (now < regOpenTime) {
+          return (
+            <span className="px-3 py-1 rounded-full bg-blue-500/20 text-blue-400 text-sm font-medium">
+              即将开始
+            </span>
+          );
+        }
+        return (
+          <span className="px-3 py-1 rounded-full bg-slate-500/20 text-slate-400 text-sm font-medium">
+            报名截止
+          </span>
+        );
+      case 'competition_running':
         return (
           <span className="px-3 py-1 rounded-full bg-green-500/20 text-green-400 text-sm font-medium">
             进行中
           </span>
         );
-      case 'upcoming':
+      case 'judging':
         return (
-          <span className="px-3 py-1 rounded-full bg-blue-500/20 text-blue-400 text-sm font-medium">
-            即将开始
+          <span className="px-3 py-1 rounded-full bg-purple-500/20 text-purple-400 text-sm font-medium">
+            评审中
           </span>
         );
-      case 'completed':
+      case 'results_announced':
         return (
           <span className="px-3 py-1 rounded-full bg-slate-500/20 text-slate-400 text-sm font-medium">
             已结束
           </span>
         );
+      default:
+        return (
+          <span className="px-3 py-1 rounded-full bg-slate-600/20 text-slate-400 text-sm font-medium">
+            草稿
+          </span>
+        );
     }
   };
 
-  const formatDate = (date: string) => {
-    const d = new Date(date);
-    if (isNaN(d.getTime())) return date || '待定';
-    return d.toLocaleDateString('zh-CN', {
-      month: 'short',
-      day: 'numeric',
-    });
-  };
-
-  const totalPrize = hackathon.prizes.reduce((sum, p) => sum + p.amount, 0);
+  const totalPrize = (hackathon.prizes || []).reduce((sum, p) => sum + p.amount, 0);
 
   return (
     <Link
@@ -79,7 +101,7 @@ export default function HackathonCard({ hackathon }: HackathonCardProps) {
         </p>
 
         <div className="flex flex-wrap gap-2 mb-4">
-          {hackathon.categories.slice(0, 3).map((category) => (
+          {(hackathon.categories || []).slice(0, 3).map((category) => (
             <span
               key={category}
               className="px-2 py-1 rounded-md bg-slate-700/50 text-slate-300 text-xs"
@@ -93,7 +115,7 @@ export default function HackathonCard({ hackathon }: HackathonCardProps) {
           <div className="flex items-center gap-4">
             <div className="flex items-center gap-1">
               <Calendar className="w-4 h-4" />
-              <span>{formatDate(hackathon.startDate)} - {formatDate(hackathon.endDate)}</span>
+              <span>{formatDate(hackathon.startDate || '')} - {formatDate(hackathon.endDate || '')}</span>
             </div>
           </div>
           <div className="flex items-center gap-4">

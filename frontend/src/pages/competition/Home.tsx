@@ -44,7 +44,7 @@ const heroSlides = [
 
 export default function Home() {
   const { hackathons } = useAppStore();
-  const featuredHackathons = hackathons.filter(h => h.status !== 'completed').slice(0, 3);
+  const featuredHackathons = hackathons.filter(h => h.status !== 'results_announced').slice(0, 3);
 
   const [currentSlide, setCurrentSlide] = useState(0);
 

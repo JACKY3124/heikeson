@@ -1,16 +1,28 @@
-import { get, post } from '@/utils/request';
-import type { Hackathon, Registration, Team, RegistrationStatusResponse } from '@/types';
+import { get, post, del } from '@/utils/request';
+import type { Hackathon, Registration, RegistrationStatusResponse } from '@/types';
 import type { PageResponse } from '@/types';
 
 export interface GetCompetitionsParams {
-  status?: 'upcoming' | 'running' | 'ended';
+  status?: 'draft' | 'registration_open' | 'registration_closed' | 'competition_running' | 'judging' | 'results_announced';
   page?: number;
   size?: number;
 }
 
 export interface RegisterRequest {
-  teamName?: string;
-  teamMembers?: number[];
+  teamName: string;
+  region: string;
+  captainName: string;
+  captainPhone: string;
+  captainEmail: string;
+  members: {
+    fullName: string;
+    phone: string;
+    email: string;
+    memberType: 'registered' | 'unregistered';
+    userId?: string;
+  }[];
+  agreeIP: boolean;
+  agreeParticipation: boolean;
 }
 
 export const getCompetitions = async (params?: GetCompetitionsParams): Promise<PageResponse<Hackathon>> => {
@@ -23,7 +35,7 @@ export const getCompetitionById = async (id: number): Promise<Hackathon> => {
   return result;
 };
 
-export const registerCompetition = async (id: number, data?: RegisterRequest): Promise<Registration> => {
+export const registerCompetition = async (id: number, data: RegisterRequest): Promise<Registration> => {
   const result = await post<Registration>(`/api/competitions/${id}/register`, data);
   return result;
 };
@@ -31,4 +43,8 @@ export const registerCompetition = async (id: number, data?: RegisterRequest): P
 export const getRegistrationStatus = async (id: number): Promise<RegistrationStatusResponse> => {
   const result = await get<RegistrationStatusResponse>(`/api/competitions/${id}/registration/status`);
   return result;
+};
+
+export const withdrawCompetition = async (id: number): Promise<void> => {
+  await del(`/api/competitions/${id}/registration`);
 };

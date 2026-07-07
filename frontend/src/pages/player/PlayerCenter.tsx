@@ -57,12 +57,12 @@ export default function PlayerCenter() {
   // 统计数据
   const stats = useMemo(() => {
     const scored = submissions.filter(s => {
-      const r = getScoreRecord(s.id);
+      const r = getScoreRecord(String(s.id));
       return r && (r.aiScore || r.expertScores.length > 0);
     });
     const avg = scored.length > 0
       ? Math.round(scored.reduce((sum, s) => {
-          const r = getScoreRecord(s.id);
+          const r = getScoreRecord(String(s.id));
           return sum + (r?.finalScore || 0);
         }, 0) / scored.length * 10) / 10
       : 0;
@@ -83,7 +83,7 @@ export default function PlayerCenter() {
     ];
 
     submissions.forEach(sub => {
-      const record = getScoreRecord(sub.id);
+      const record = getScoreRecord(String(sub.id));
       if (record?.aiScore) {
         record.aiScore.scores.forEach(s => {
           const dim = dimensions.find(d => d.id === s.criteriaId);
@@ -110,7 +110,7 @@ export default function PlayerCenter() {
 
   // 可参与的竞赛推荐
   const joinableHackathons = useMemo(() => {
-    return hackathons.filter(h => h.status !== 'completed');
+    return hackathons.filter(h => h.status !== 'results_announced');
   }, [hackathons]);
 
   return (
@@ -168,11 +168,11 @@ export default function PlayerCenter() {
                     {submissions.length > 0 ? (
                       <div className="space-y-3">
                         {submissions.slice(0, 5).map(sub => {
-                          const record = getScoreRecord(sub.id);
-                          const hack = getHackathonById(sub.hackathonId);
+                          const record = getScoreRecord(String(sub.id));
+                          const hack = getHackathonById(String(sub.hackathonId));
                           return (
                             <Link
-                              key={sub.id}
+                              key={String(sub.id)}
                               to="/my-submissions"
                               className="block p-4 bg-slate-800/40 rounded-xl hover:bg-slate-800/70 transition-colors group"
                             >
@@ -300,11 +300,11 @@ export default function PlayerCenter() {
                 </h3>
                 <div className="space-y-3">
                   {recentActivity.map(sub => {
-                    const hack = getHackathonById(sub.hackathonId);
-                    const record = getScoreRecord(sub.id);
+                    const hack = getHackathonById(String(sub.hackathonId));
+                    const record = getScoreRecord(String(sub.id));
                     const isScored = record && (record.aiScore || record.expertScores.length > 0);
                     return (
-                      <div key={sub.id} className="flex items-center gap-4 text-sm">
+                      <div key={String(sub.id)} className="flex items-center gap-4 text-sm">
                         <div className="flex-shrink-0 w-2 h-2 rounded-full bg-blue-500 mt-1" />
                         <div className="flex-1 min-w-0">
                           <span className="text-slate-300">{sub.title}</span>
@@ -362,10 +362,10 @@ export default function PlayerCenter() {
                           <p className="text-slate-500 text-xs mt-1">{h.location} · {h.currentParticipants}人参与</p>
                         </div>
                         <Badge
-                          variant={h.status === 'ongoing' ? 'success' : 'warning'}
+                          variant={h.status === 'competition_running' ? 'success' : 'warning'}
                           size="sm"
                         >
-                          {h.status === 'ongoing' ? '进行中' : '即将开始'}
+                          {h.status === 'competition_running' ? '进行中' : '即将开始'}
                         </Badge>
                       </div>
                     </Link>

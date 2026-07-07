@@ -14,6 +14,7 @@ import {
   type RegistrationData,
   type TeamMember,
 } from '../competition/HackathonRegister';
+import { getCompetitionStatus } from '@/utils/helpers';
 
 const TECHNOLOGIES = [
   'React', 'Vue', 'Angular', 'Node.js', 'Python', 'Go', 'Rust',
@@ -144,12 +145,12 @@ export default function MySubmissions() {
   const stats = useMemo(() => {
     const total = userSubmissions.length;
     const scored = userSubmissions.filter(s => {
-      const r = getScoreRecord(s.id);
+      const r = getScoreRecord(String(s.id));
       return r && r.aiScore && r.expertScores.length > 0;
     }).length;
     const avgScore = scored > 0
       ? Math.round(userSubmissions.reduce((sum, s) => {
-          const r = getScoreRecord(s.id);
+          const r = getScoreRecord(String(s.id));
           return sum + (r?.finalScore || 0);
         }, 0) / scored * 10) / 10
       : 0;
@@ -157,14 +158,13 @@ export default function MySubmissions() {
   }, [userSubmissions, getScoreRecord]);
 
   const submissionsByHackathon = useMemo(() => {
-    // 双重安全：只从已报名的竞赛中提取作品
     const registeredIds = new Set(registrationList.map(r => r.hackathonId));
     const map = new Map<string, { hackathon: typeof hackathons[0], submissions: typeof userSubmissions }>();
-    userSubmissions.filter(s => registeredIds.has(s.hackathonId)).forEach(s => {
-      const h = getHackathonById(s.hackathonId);
+    userSubmissions.filter(s => registeredIds.has(String(s.hackathonId))).forEach(s => {
+      const h = getHackathonById(String(s.hackathonId));
       if (!h) return;
-      if (!map.has(h.id)) map.set(h.id, { hackathon: h, submissions: [] });
-      map.get(h.id)!.submissions.push(s);
+      if (!map.has(String(h.id))) map.set(String(h.id), { hackathon: h, submissions: [] });
+      map.get(String(h.id))!.submissions.push(s);
     });
     return Array.from(map.values());
   }, [userSubmissions, getHackathonById, registrationList]);
@@ -177,12 +177,12 @@ export default function MySubmissions() {
       // 按作品名称搜索
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase();
-        filtered = filtered.filter(s => s.title.toLowerCase().includes(q) || s.description.toLowerCase().includes(q));
+        filtered = filtered.filter(s => s.title.toLowerCase().includes(q) || (s.description || '').toLowerCase().includes(q));
       }
 
       // 按竞赛筛选
       if (filterHackathon) {
-        if (hackathon.id !== filterHackathon) {
+        if (String(hackathon.id) !== filterHackathon) {
           filtered = [];
         }
       }
@@ -190,7 +190,7 @@ export default function MySubmissions() {
       // 按状态筛选
       if (filterStatus !== 'all') {
         filtered = filtered.filter(s => {
-          const r = getScoreRecord(s.id);
+          const r = getScoreRecord(String(s.id));
           const hasScore = r && r.aiScore && r.expertScores.length > 0;
           return filterStatus === 'scored' ? hasScore : !hasScore;
         });
@@ -203,7 +203,7 @@ export default function MySubmissions() {
   const avgDimScore = useMemo(() => {
     return CRITERIA.map(c => {
       const scores = userSubmissions.flatMap(s => {
-        const r = getScoreRecord(s.id);
+        const r = getScoreRecord(String(s.id));
         if (!r) return [];
         const ai = r.aiScore?.scores.find(sc => sc.criteriaId === c.id);
         const ex = r.expertScores.map(es => es.scores.find(sc => sc.criteriaId === c.id)).filter(Boolean);
@@ -235,12 +235,30 @@ export default function MySubmissions() {
     if (formData.technology.length === 0) errors.technology = '至少选择一项技术';
     if (!formData.teamId) errors.teamId = '请选择参赛团队';
     if (formData.codeUrl && !/^https?:\/\//.test(formData.codeUrl)) errors.codeUrl = '请输入有效的URL';
-    // 视频链接不限制平台，允许任意链接或为空
 
     if (formData.teamId) {
       const existingUserSubmission = userSubmissions.some(s => s.hackathonId === formData.teamId);
       if (existingUserSubmission) {
         errors.teamId = '您在该竞赛已提交作品，如需重新提交请先删除原作品';
+      }
+
+      const hackathon = getHackathonById(formData.teamId);
+      if (hackathon) {
+        const status = getCompetitionStatus(hackathon);
+        if (status !== 'competition_running') {
+          errors.teamId = '当前竞赛不在作品提交阶段';
+        }
+
+        const regKey = `${hackathon.id}_${user?.id}`;
+        const reg = registrations[regKey];
+        if (!reg || reg.status !== 'approved') {
+          errors.teamId = '报名未通过审核，无法提交作品';
+        }
+
+        const submissionDeadline = new Date(hackathon.submissionDeadline || hackathon.endDate || '').getTime();
+        if (new Date().getTime() > submissionDeadline) {
+          errors.teamId = '作品提交已截止';
+        }
       }
     }
 
@@ -254,13 +272,13 @@ export default function MySubmissions() {
 
     try {
       // 从报名记录中查找选中的竞赛信息
-      const hackathonId = formData.teamId;
+      const hackathonId = String(formData.teamId);
 
       // 构造 teamId：优先用已有团队，否则基于用户+竞赛生成唯一ID
       const teamFromGlobalTeams = teams.find(
         t => t.hackathonId === hackathonId && t.members.some(m => m.id === user?.id)
       );
-      const effectiveTeamId = teamFromGlobalTeams?.id || `reg_${user?.id}_${hackathonId}`;
+      const effectiveTeamId = String(teamFromGlobalTeams?.id || `reg_${user?.id}_${hackathonId}`);
 
       const result = submitProject({
         title: formData.title,
@@ -309,7 +327,7 @@ export default function MySubmissions() {
 
   const handleDelete = () => {
     if (!deletingSubmission) return;
-    deleteSubmission(deletingSubmission.id);
+    deleteSubmission(String(deletingSubmission.id));
     closeDeleteModal();
   };
 
@@ -426,10 +444,10 @@ export default function MySubmissions() {
     const userTeamIds = new Set(teams.filter(t => t.members.some(m => m.id === user.id)).map(t => t.id));
     submissions
       .filter(s =>
-        s.hackathonId === withdrawingRegistration.hackathonId &&
-        (userTeamIds.has(s.teamId) || s.teamId.startsWith(`reg_${user.id}_`))
+        String(s.hackathonId) === withdrawingRegistration.hackathonId &&
+        (userTeamIds.has(String(s.teamId)) || String(s.teamId).startsWith(`reg_${user.id}_`))
       )
-      .forEach(s => deleteSubmission(s.id));
+      .forEach(s => deleteSubmission(String(s.id)));
 
     setShowWithdrawModal(false);
     setWithdrawingRegistration(null);
@@ -650,11 +668,12 @@ export default function MySubmissions() {
             {/* 提交列表 */}
             <div className="lg:col-span-3 space-y-6">
               {filteredSubmissionsByHackathon.map(({ hackathon, submissions: hackathonSubs }) => {
-                const isCollapsed = collapsedHackathons.has(hackathon.id);
+                const hackathonId = String(hackathon.id);
+                const isCollapsed = collapsedHackathons.has(hackathonId);
                 return (
-                  <Card key={hackathon.id} className="p-6">
+                  <Card key={hackathonId} className="p-6">
                     <button
-                      onClick={() => toggleHackathonCollapse(hackathon.id)}
+                      onClick={() => toggleHackathonCollapse(hackathonId)}
                       className="w-full flex items-center gap-3 mb-4 text-left"
                     >
                       <div className="w-10 h-10 rounded-xl bg-blue-500/20 flex items-center justify-center">
@@ -663,11 +682,11 @@ export default function MySubmissions() {
                       <div className="flex-1">
                         <h3 className="text-lg font-semibold text-white">{hackathon.title}</h3>
                         <p className="text-sm text-slate-400">
-                          {hackathonSubs.length} 个提交 · {hackathon.status === 'completed' ? '已结束' : '进行中'}
+                          {hackathonSubs.length} 个提交 · {hackathon.status === 'results_announced' ? '已结束' : '进行中'}
                         </p>
                       </div>
                       <Link
-                        to={`/hackathons/${hackathon.id}`}
+                        to={`/hackathons/${hackathonId}`}
                         onClick={e => e.stopPropagation()}
                         className="text-blue-400 text-sm hover:underline flex items-center gap-1 mr-2"
                       >
@@ -684,10 +703,10 @@ export default function MySubmissions() {
                     {!isCollapsed && (
                       <div className="space-y-4">
                         {hackathonSubs.map(sub => {
-                          const score = getScoreBreakdown(sub.id);
-                          const isExpanded = expandedSubmission === sub.id;
-                          const subTeam = teams.find(t => t.id === sub.teamId);
-                          const subHackathon = subTeam ? getHackathonById(subTeam.hackathonId) : null;
+                          const score = getScoreBreakdown(String(sub.id));
+                          const isExpanded = expandedSubmission === String(sub.id);
+                          const subTeam = teams.find(t => t.id === String(sub.teamId));
+                          const subHackathon = subTeam ? getHackathonById(String(subTeam.hackathonId)) : null;
                           return (
                             <div key={sub.id} className="border border-slate-700/50 rounded-xl p-4">
                               <div className="flex items-start gap-4">
@@ -738,7 +757,7 @@ export default function MySubmissions() {
                                 <div className="text-right flex-shrink-0">
                                   {score ? (
                                     <div className="text-right">
-                                      <p className="text-2xl font-bold text-white">{getScoreRecord(sub.id)?.finalScore?.toFixed(2) || '-'}</p>
+                                      <p className="text-2xl font-bold text-white">{getScoreRecord(String(sub.id))?.finalScore?.toFixed(2) || '-'}</p>
                                       <p className="text-xs text-slate-400">综合评分</p>
                                     </div>
                                   ) : (
@@ -752,7 +771,7 @@ export default function MySubmissions() {
 
                               {score && score.expertCount > 0 && (
                                 <button
-                                  onClick={() => setExpandedSubmission(isExpanded ? null : sub.id)}
+                                  onClick={() => setExpandedSubmission(isExpanded ? null : String(sub.id))}
                                   className="mt-3 flex items-center gap-1 text-sm text-blue-400 hover:text-blue-300 transition-colors"
                                 >
                                   <BarChart3 className="w-4 h-4" />
@@ -1186,7 +1205,7 @@ export default function MySubmissions() {
               </div>
               <button
                 type="button"
-                onClick={() => updateRegField('members', [...regEditForm.members, { id: String(Date.now()), fullName: '', phone: '', email: '' }])}
+                onClick={() => updateRegField('members', [...regEditForm.members, { id: String(Date.now()), fullName: '', phone: '', email: '', memberType: 'unregistered' }])}
                 className="mt-3 flex items-center gap-2 px-3 py-1.5 rounded-lg border border-slate-600 text-slate-300 hover:bg-slate-800 transition-colors text-sm"
               >
                 <Plus className="w-4 h-4" />

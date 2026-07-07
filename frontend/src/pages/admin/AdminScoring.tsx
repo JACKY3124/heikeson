@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { Settings, Cpu, Users, BarChart3, CheckCircle, RefreshCw, Save } from 'lucide-react';
 import { useAppStore } from '@/store';
 import type { ScoringConfig } from '@/types';
+import { getCompetitionStatus } from '@/utils/helpers';
 
 export default function AdminScoring() {
   const { 
@@ -58,6 +59,18 @@ export default function AdminScoring() {
   };
 
   const handleRunAIScore = (submissionId: string) => {
+    const submission = submissions.find(s => s.id === submissionId);
+    if (!submission) return;
+    
+    const hackathon = hackathons.find(h => h.id === submission.hackathonId);
+    if (hackathon) {
+      const status = getCompetitionStatus(hackathon);
+      if (status !== 'competition_running' && status !== 'judging') {
+        alert('当前竞赛不在评分阶段');
+        return;
+      }
+    }
+    
     setRunningAIScore(submissionId);
     runAIScoring(submissionId);
     setTimeout(() => setRunningAIScore(null), 1500);
@@ -268,11 +281,11 @@ export default function AdminScoring() {
                             </div>
                           ) : (
                             <button
-                              onClick={() => handleRunAIScore(submission.id)}
-                              disabled={runningAIScore === submission.id}
+                              onClick={() => handleRunAIScore(String(submission.id))}
+                              disabled={runningAIScore === String(submission.id)}
                               className="flex items-center gap-2 px-4 py-2 rounded-lg bg-purple-500/20 text-purple-400 hover:bg-purple-500/30 transition-colors"
                             >
-                              <RefreshCw className={`w-4 h-4 ${runningAIScore === submission.id ? 'animate-spin' : ''}`} />
+                              <RefreshCw className={`w-4 h-4 ${runningAIScore === String(submission.id) ? 'animate-spin' : ''}`} />
                               {runningAIScore === submission.id ? '评分中...' : 'AI评分'}
                             </button>
                           )}
@@ -294,8 +307,8 @@ export default function AdminScoring() {
             <div className="glass rounded-2xl p-6 mt-6">
               <h2 className="text-xl font-semibold text-white mb-6">竞赛排行榜</h2>
               <div className="space-y-4">
-                {hackathons.filter(h => h.status === 'ongoing' || h.status === 'completed').slice(0, 3).map(hackathon => {
-                  const leaderboard = getLeaderboardByHackathon(hackathon.id);
+                {hackathons.filter(h => h.status === 'competition_running' || h.status === 'judging' || h.status === 'results_announced').slice(0, 3).map(hackathon => {
+                  const leaderboard = getLeaderboardByHackathon(String(hackathon.id));
                   return (
                     <div key={hackathon.id} className="p-4 bg-slate-800/50 rounded-xl">
                       <h4 className="text-white font-medium mb-3">{hackathon.title}</h4>

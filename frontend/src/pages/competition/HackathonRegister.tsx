@@ -1,14 +1,21 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { FileCheck, ArrowLeft, Plus, Trash2, CheckCircle } from 'lucide-react';
+import { FileCheck, ArrowLeft, Plus, Trash2, CheckCircle, Clock, AlertCircle, Search, UserCheck } from 'lucide-react';
 import { useAppStore } from '@/store';
 import { Card } from '@/components/ui';
+import { registerCompetition } from '@/api/hackathon';
+import { getCompetitionStatus } from '@/utils/helpers';
+import type { User } from '@/types';
+
+export type MemberType = 'registered' | 'unregistered';
 
 export interface TeamMember {
   id: string;
   fullName: string;
   phone: string;
   email: string;
+  memberType: MemberType;
+  userId?: string;
 }
 
 export interface RegistrationData {
@@ -21,6 +28,7 @@ export interface RegistrationData {
   region: string;
   members: TeamMember[];
   submittedAt: string;
+  status: 'pending' | 'approved' | 'rejected' | 'withdrawn';
 }
 
 interface RegistrationForm {
@@ -43,7 +51,7 @@ const REGIONS = [
 ];
 
 function createEmptyMember(id: string): TeamMember {
-  return { id, fullName: '', phone: '', email: '' };
+  return { id, fullName: '', phone: '', email: '', memberType: 'unregistered' };
 }
 
 export function getRegistrations(): Record<string, RegistrationData> {
@@ -63,7 +71,7 @@ export function saveRegistration(data: RegistrationData) {
 export default function HackathonRegister() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { getHackathonById, user, createTeam } = useAppStore();
+  const { getHackathonById, user, createTeam, users } = useAppStore();
   const hackathon = getHackathonById(id!);
 
   const minTeamSize = hackathon?.minTeamSize ?? 1;
@@ -91,6 +99,56 @@ export default function HackathonRegister() {
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [submitted, setSubmitted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [apiError, setApiError] = useState('');
+
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<User[]>([]);
+  const [showSearchResults, setShowSearchResults] = useState(false);
+  const [searchForIndex, setSearchForIndex] = useState<number | null>(null);
+
+  const handleSearchUsers = (query: string) => {
+    setSearchQuery(query);
+    if (query.trim()) {
+      const results = users.filter(u =>
+        u.email.toLowerCase().includes(query.toLowerCase()) ||
+        u.name.toLowerCase().includes(query.toLowerCase())
+      ).filter(u => u.id !== user?.id);
+      setSearchResults(results);
+      setShowSearchResults(true);
+    } else {
+      setShowSearchResults(false);
+    }
+  };
+
+  const selectUserForMember = (selectedUser: User, index: number) => {
+    setForm(prev => ({
+      ...prev,
+      members: prev.members.map((m, i) =>
+        i === index
+          ? {
+              ...m,
+              fullName: selectedUser.name,
+              email: selectedUser.email,
+              phone: '',
+              memberType: 'registered',
+              userId: String(selectedUser.id),
+            }
+          : m
+      ),
+    }));
+    setShowSearchResults(false);
+    setSearchQuery('');
+    setSearchForIndex(null);
+  };
+
+  const updateMemberType = (index: number, type: MemberType) => {
+    setForm(prev => ({
+      ...prev,
+      members: prev.members.map((m, i) =>
+        i === index ? { ...m, memberType: type, userId: type === 'registered' ? m.userId : undefined } : m
+      ),
+    }));
+  };
 
   useEffect(() => {
     if (submitted) {
@@ -112,19 +170,51 @@ export default function HackathonRegister() {
     );
   }
 
-  if (hackathon.status !== 'ongoing') {
+  const competitionStatus = getCompetitionStatus(hackathon);
+  const isRegistrationOpen = competitionStatus === 'registration_open';
+
+  const regOpenTime = new Date(hackathon.registrationOpenTime || hackathon.startDate || '');
+  const regDeadline = new Date(hackathon.registrationDeadline || hackathon.startDate || '');
+  const startTime = new Date(hackathon.startDate || hackathon.startTime || '');
+
+  if (!isRegistrationOpen) {
+    let statusText = '';
+    let color = '';
+    let iconColor = '';
+    let description = '';
+
+    if (competitionStatus === 'registration_closed' && new Date().getTime() < regOpenTime.getTime()) {
+      statusText = '报名未开始';
+      color = '#fbbf24';
+      iconColor = 'text-amber-400';
+      description = `报名将于 ${regOpenTime.toLocaleDateString('zh-CN', { month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' })} 开启`;
+    } else if (competitionStatus === 'registration_closed') {
+      statusText = '报名已截止';
+      color = '#94a3b8';
+      iconColor = 'text-slate-500';
+      description = `报名已于 ${regDeadline.toLocaleDateString('zh-CN', { month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' })} 截止`;
+    } else if (competitionStatus === 'competition_running') {
+      statusText = '比赛进行中';
+      color = '#22c55e';
+      iconColor = 'text-green-400';
+      description = '报名已截止，比赛正在进行中';
+    } else {
+      statusText = '比赛已结束';
+      color = '#64748b';
+      iconColor = 'text-slate-500';
+      description = `比赛已于 ${startTime.toLocaleDateString('zh-CN', { month: 'long', day: 'numeric' })} 结束`;
+    }
+
     return (
       <div className="max-w-3xl mx-auto px-6 py-16 text-center">
-        <FileCheck className={`w-16 h-16 mx-auto mb-4 ${hackathon.status === 'upcoming' ? 'text-amber-400' : 'text-slate-500'}`} />
+        <div className={`w-16 h-16 mx-auto mb-4 rounded-full bg-slate-800 flex items-center justify-center`}>
+          <Clock className={`w-8 h-8 ${iconColor}`} />
+        </div>
         <h2 className="text-2xl font-bold text-white mb-2">{hackathon.title}</h2>
-        <p className="text-lg mb-6" style={{ color: hackathon.status === 'upcoming' ? '#fbbf24' : '#94a3b8' }}>
-          {hackathon.status === 'upcoming' ? '报名未开始' : '报名已结束'}
+        <p className="text-lg mb-6" style={{ color }}>
+          {statusText}
         </p>
-        <p className="text-slate-400 mb-6">
-          {hackathon.status === 'upcoming'
-            ? `报名将在 ${new Date(hackathon.startDate).toLocaleDateString('zh-CN')} 开启`
-            : `该竞赛已于 ${new Date(hackathon.endDate).toLocaleDateString('zh-CN')} 结束`}
-        </p>
+        <p className="text-slate-400 mb-6">{description}</p>
         <button
           onClick={() => navigate(-1)}
           className="px-6 py-2.5 bg-blue-500 hover:bg-blue-600 rounded-xl text-white font-medium transition-colors"
@@ -175,10 +265,17 @@ export default function HackathonRegister() {
     if (!form.teamName.trim()) newErrors.teamName = '请输入团队名称';
     if (!form.region) newErrors.region = '请选择所属赛区';
 
-    const validMembers = form.members.filter(m => m.fullName.trim() && m.phone.trim() && m.email.trim());
-    const requiredAdditional = minAdditionalMembers;
-    if (validMembers.length < requiredAdditional) {
-      newErrors.members = `每个团队人数要求 ${minTeamSize}-${maxTeamSize} 人（含队长），请至少填写 ${requiredAdditional} 名其他成员的完整信息`;
+    if (minTeamSize > 1) {
+      const validMembers = form.members.filter(m => {
+        const hasName = m.fullName.trim();
+        const hasPhone = m.memberType === 'registered' || m.phone.trim();
+        const hasEmail = m.email.trim();
+        return hasName && hasPhone && hasEmail;
+      });
+      const requiredAdditional = minTeamSize - 1;
+      if (validMembers.length < requiredAdditional) {
+        newErrors.members = `团队人数要求 ${minTeamSize}-${maxTeamSize} 人（含队长），请至少添加 ${requiredAdditional} 名成员`;
+      }
     }
 
     if (!form.agreeIP) newErrors.agreeIP = '请阅读并同意知识产权声明';
@@ -188,30 +285,78 @@ export default function HackathonRegister() {
     return Object.keys(newErrors).length === 0;
   };
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     if (!validate()) return;
+    
+    const registrations = getRegistrations();
+    const existingReg = registrations[`${hackathon.id}_${user?.id}`];
+    if (existingReg && existingReg.status !== 'withdrawn' && existingReg.status !== 'rejected') {
+      setApiError('您已报名该竞赛，请勿重复报名');
+      return;
+    }
+    
     setSubmitting(true);
+    setApiError('');
 
-    setTimeout(() => {
-      // 创建团队
-      const validMembers = form.members.filter(m => m.fullName.trim() && m.phone.trim() && m.email.trim());
-      const teamMembers = validMembers.map(m => ({
-        id: `member-${m.id}`,
-        name: m.fullName,
-        email: m.email,
-        avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${m.fullName}`,
-        bio: '',
-        skills: [],
-        role: 'player' as const,
-      }));
+    try {
+      const validMembers = form.members.filter(m => {
+        const hasName = m.fullName.trim();
+        const hasPhone = m.memberType === 'registered' || m.phone.trim();
+        const hasEmail = m.email.trim();
+        return hasName && hasPhone && hasEmail;
+      });
 
-      const newTeam = createTeam(form.teamName, '', hackathon.id, teamMembers);
+      const registerData = {
+        teamName: form.teamName,
+        region: form.region,
+        captainName: form.captainName,
+        captainPhone: form.captainPhone,
+        captainEmail: form.captainEmail,
+        members: validMembers.map(m => ({
+          fullName: m.fullName,
+          phone: m.phone,
+          email: m.email,
+          memberType: m.memberType,
+          userId: m.userId,
+        })),
+        agreeIP: form.agreeIP,
+        agreeParticipation: form.agreeParticipation,
+      };
 
-      // 保存完整报名记录到 localStorage
+      await registerCompetition(parseInt(String(hackathon.id)), registerData);
+
+      const teamMembers = validMembers.map(m => {
+        if (m.memberType === 'registered' && m.userId) {
+          const existingUser = users.find(u => String(u.id) === m.userId);
+          if (existingUser) {
+            return {
+              id: String(existingUser.id),
+              name: existingUser.name,
+              email: existingUser.email,
+              avatar: existingUser.avatar,
+              bio: existingUser.bio || '',
+              skills: existingUser.skills || [],
+              role: 'player' as const,
+            };
+          }
+        }
+        return {
+          id: `member-${m.id}`,
+          name: m.fullName,
+          email: m.email,
+          avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${m.fullName}`,
+          bio: '',
+          skills: [],
+          role: 'player' as const,
+        };
+      });
+
+      createTeam(form.teamName, '', String(hackathon.id), teamMembers);
+
       if (hackathon && user) {
         saveRegistration({
-          hackathonId: hackathon.id,
-          userId: user.id,
+          hackathonId: String(hackathon.id),
+          userId: String(user.id),
           teamName: form.teamName,
           captainName: form.captainName,
           captainPhone: form.captainPhone,
@@ -219,17 +364,16 @@ export default function HackathonRegister() {
           region: form.region,
           members: validMembers.map(m => ({ ...m })),
           submittedAt: new Date().toISOString(),
+          status: 'pending',
         });
-      }
-
-      if (!newTeam) {
-        setSubmitting(false);
-        return;
       }
 
       setSubmitting(false);
       setSubmitted(true);
-    }, 800);
+    } catch (error: any) {
+      setSubmitting(false);
+      setApiError(error.message || '报名提交失败，请稍后重试');
+    }
   };
 
   if (submitted) {
@@ -237,16 +381,20 @@ export default function HackathonRegister() {
       <div className="py-8 pb-16">
         <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8">
           <Card className="p-12 text-center">
-            <div className="w-20 h-20 mx-auto mb-6 rounded-full bg-green-500/20 flex items-center justify-center">
-              <CheckCircle className="w-10 h-10 text-green-500" />
+            <div className="w-20 h-20 mx-auto mb-6 rounded-full bg-blue-500/20 flex items-center justify-center">
+              <Clock className="w-10 h-10 text-blue-500" />
             </div>
             <h2 className="text-2xl font-bold text-white mb-3">报名提交成功！</h2>
             <p className="text-slate-400 mb-4">
-              团队 <span className="text-white font-medium">{form.teamName}</span> 已成功报名
+              团队 <span className="text-white font-medium">{form.teamName}</span> 已成功提交报名申请
               <span className="text-white font-medium"> {hackathon.title} </span>
               竞赛。
             </p>
-            <p className="text-slate-500 text-sm">正在跳转到我的提交页面...</p>
+            <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-blue-500/10 text-blue-400 text-sm mb-4">
+              <Clock className="w-4 h-4" />
+              等待审核中
+            </div>
+            <p className="text-slate-500 text-sm">审核结果将通过邮件通知，请留意邮箱。正在跳转到我的提交页面...</p>
           </Card>
         </div>
       </div>
@@ -274,6 +422,13 @@ export default function HackathonRegister() {
           <div className="p-6 border-b border-slate-700 bg-slate-800/50">
             <h1 className="text-2xl font-bold text-white mb-2">竞赛报名</h1>
             <p className="text-slate-400">{hackathon.title}</p>
+            <div className="mt-4 flex items-center gap-2 text-sm">
+              <Clock className="w-4 h-4 text-amber-400" />
+              <span className="text-slate-400">报名截止：</span>
+              <span className="text-amber-400 font-medium">
+                {regDeadline.toLocaleDateString('zh-CN', { month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+              </span>
+            </div>
           </div>
 
           <div className="p-6 space-y-10">
@@ -383,71 +538,138 @@ export default function HackathonRegister() {
               {errors.region && <p className="text-red-400 text-sm mt-2">{errors.region}</p>}
             </div>
 
-            {/* 06 其他成员 */}
-            <div>
-              <label className="block text-white font-medium mb-2">
-                <FieldNumber num="06" />
-                其他团队成员信息 Additional Team Member Information
-              </label>
-              <p className="text-slate-500 text-sm mb-4">
-                每个团队人数 {minTeamSize}-{maxTeamSize} 人（含队长），请填写其他成员信息。
-                {maxAdditionalMembers > 0 && (
-                  <>每个团队最多可添加 {maxAdditionalMembers} 名额外成员。</>
-                )}
-              </p>
-              <div className="space-y-4">
-                {form.members.map((member, index) => (
-                  <div key={member.id} className="p-4 bg-slate-800/50 rounded-lg border border-slate-700">
-                    <div className="flex items-center justify-between mb-3">
-                      <span className="text-white font-medium">成员 {index + 1} Member {index + 1}</span>
-                      {form.members.length > minAdditionalMembers && (
+            {minTeamSize > 1 && (
+            <>
+              {/* 06 其他成员 */}
+              <div>
+                <label className="block text-white font-medium mb-2">
+                  <FieldNumber num="06" />
+                  其他团队成员信息 Additional Team Member Information
+                </label>
+                <p className="text-slate-500 text-sm mb-4">
+                  每个团队人数 {minTeamSize}-{maxTeamSize} 人（含队长），请填写其他成员信息。
+                  {maxAdditionalMembers > 0 && (
+                    <>每个团队最多可添加 {maxAdditionalMembers} 名额外成员。</>
+                  )}
+                </p>
+                <div className="space-y-4">
+                  {form.members.map((member, index) => (
+                    <div key={member.id} className="p-4 bg-slate-800/50 rounded-lg border border-slate-700">
+                      <div className="flex items-center justify-between mb-3">
+                        <span className="text-white font-medium">成员 {index + 1} Member {index + 1}</span>
+                        {form.members.length > minAdditionalMembers && (
+                          <button
+                            type="button"
+                            onClick={() => removeMember(index)}
+                            className="text-slate-400 hover:text-red-400 transition-colors"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        )}
+                      </div>
+                      <div className="flex gap-2 mb-3">
                         <button
                           type="button"
-                          onClick={() => removeMember(index)}
-                          className="text-slate-400 hover:text-red-400 transition-colors"
+                          onClick={() => updateMemberType(index, 'registered')}
+                          className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-sm transition-colors ${
+                            member.memberType === 'registered'
+                              ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30'
+                              : 'bg-slate-700/50 text-slate-400 border border-slate-600 hover:bg-slate-700'
+                          }`}
                         >
-                          <Trash2 className="w-4 h-4" />
+                          <UserCheck className="w-3.5 h-3.5" />
+                          已注册用户
                         </button>
+                        <button
+                          type="button"
+                          onClick={() => updateMemberType(index, 'unregistered')}
+                          className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-sm transition-colors ${
+                            member.memberType === 'unregistered'
+                              ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30'
+                              : 'bg-slate-700/50 text-slate-400 border border-slate-600 hover:bg-slate-700'
+                          }`}
+                        >
+                          未注册用户
+                        </button>
+                      </div>
+                      {member.memberType === 'registered' ? (
+                        <div className="relative">
+                          <div className="relative">
+                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+                            <input
+                              type="text"
+                              value={searchForIndex === index ? searchQuery : member.email || member.fullName}
+                              onChange={e => {
+                                setSearchForIndex(index);
+                                handleSearchUsers(e.target.value);
+                              }}
+                              placeholder="搜索用户（邮箱或姓名）"
+                              className="w-full pl-10 pr-4 py-2.5 bg-slate-800 border border-slate-700 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 text-sm"
+                            />
+                          </div>
+                          {searchForIndex === index && showSearchResults && searchResults.length > 0 && (
+                            <div className="absolute z-10 w-full mt-2 bg-slate-800 border border-slate-700 rounded-lg overflow-hidden shadow-xl">
+                              {searchResults.map((u, i) => (
+                                <button
+                                  key={u.id}
+                                  type="button"
+                                  onClick={() => selectUserForMember(u, index)}
+                                  className={`w-full flex items-center gap-3 px-4 py-2.5 text-left hover:bg-slate-700 transition-colors ${
+                                    i !== searchResults.length - 1 ? 'border-b border-slate-700' : ''
+                                  }`}
+                                >
+                                  <img src={u.avatar} alt="" className="w-7 h-7 rounded-full" />
+                                  <div>
+                                    <p className="text-white text-sm">{u.name}</p>
+                                    <p className="text-slate-500 text-xs">{u.email}</p>
+                                  </div>
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                          <input
+                            type="text"
+                            value={member.fullName}
+                            onChange={e => updateMember(index, 'fullName', e.target.value)}
+                            placeholder="姓名 Full Name"
+                            className="px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 text-sm"
+                          />
+                          <input
+                            type="tel"
+                            value={member.phone}
+                            onChange={e => updateMember(index, 'phone', e.target.value)}
+                            placeholder="手机号码 Phone Number"
+                            className="px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 text-sm"
+                          />
+                          <input
+                            type="email"
+                            value={member.email}
+                            onChange={e => updateMember(index, 'email', e.target.value)}
+                            placeholder="邮箱 Email Address"
+                            className="px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 text-sm"
+                          />
+                        </div>
                       )}
                     </div>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                      <input
-                        type="text"
-                        value={member.fullName}
-                        onChange={e => updateMember(index, 'fullName', e.target.value)}
-                        placeholder="姓名 Full Name"
-                        className="px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 text-sm"
-                      />
-                      <input
-                        type="tel"
-                        value={member.phone}
-                        onChange={e => updateMember(index, 'phone', e.target.value)}
-                        placeholder="手机号码 Phone Number"
-                        className="px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 text-sm"
-                      />
-                      <input
-                        type="email"
-                        value={member.email}
-                        onChange={e => updateMember(index, 'email', e.target.value)}
-                        placeholder="邮箱 Email Address"
-                        className="px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 text-sm"
-                      />
-                    </div>
-                  </div>
-                ))}
+                  ))}
+                </div>
+                {errors.members && <p className="text-red-400 text-sm mt-2">{errors.members}</p>}
+                {form.members.length < maxAdditionalMembers && (
+                  <button
+                    type="button"
+                    onClick={addMember}
+                    className="mt-4 flex items-center gap-2 px-4 py-2 rounded-lg border border-slate-600 text-slate-300 hover:bg-slate-800 transition-colors text-sm"
+                  >
+                    <Plus className="w-4 h-4" />
+                    添加成员
+                  </button>
+                )}
               </div>
-              {errors.members && <p className="text-red-400 text-sm mt-2">{errors.members}</p>}
-              {form.members.length < maxAdditionalMembers && (
-                <button
-                  type="button"
-                  onClick={addMember}
-                  className="mt-4 flex items-center gap-2 px-4 py-2 rounded-lg border border-slate-600 text-slate-300 hover:bg-slate-800 transition-colors text-sm"
-                >
-                  <Plus className="w-4 h-4" />
-                  添加成员
-                </button>
-              )}
-            </div>
+            </>
+          )}
 
             {/* 07 确认协议 */}
             <div>
@@ -501,6 +723,12 @@ export default function HackathonRegister() {
 
             {/* 提交按钮 */}
             <div className="pt-6 border-t border-slate-700">
+              {apiError && (
+                <div className="flex items-center gap-2 p-3 bg-red-500/10 border border-red-500/30 rounded-lg mb-4">
+                  <AlertCircle className="w-5 h-5 text-red-400 flex-shrink-0" />
+                  <p className="text-red-400 text-sm">{apiError}</p>
+                </div>
+              )}
               <button
                 onClick={handleSubmit}
                 disabled={submitting}

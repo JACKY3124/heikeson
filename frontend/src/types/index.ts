@@ -70,6 +70,8 @@ export interface ScoreDimension {
   maxScore: number;
 }
 
+export type CompetitionStatus = 'draft' | 'registration_open' | 'registration_closed' | 'competition_running' | 'judging' | 'results_announced';
+
 export interface Hackathon {
   id: string | number;
   title: string;
@@ -79,7 +81,7 @@ export interface Hackathon {
   endDate?: string;
   startTime?: string;
   endTime?: string;
-  status: 'upcoming' | 'running' | 'ended' | 'ongoing' | 'completed';
+  status: CompetitionStatus;
   prizes?: Prize[];
   categories?: string[];
   maxParticipants?: number;
@@ -91,7 +93,11 @@ export interface Hackathon {
   minTeamSize?: number;
   maxTeamSize?: number;
   competitionType?: 'team' | 'individual';
+  registrationOpenTime?: string;
   registrationDeadline?: string;
+  submissionDeadline?: string;
+  judgingDeadline?: string;
+  announcementTime?: string;
   scoreDimensions?: ScoreDimension[];
 }
 
@@ -214,18 +220,35 @@ export interface ExpertDetailScore {
   comment?: string;
 }
 
+export type RegistrationStatus = 'not_registered' | 'pending' | 'approved' | 'rejected' | 'withdrawn';
+
 export interface Registration {
   id: number;
   competitionId: number;
   userId: number;
   teamId?: number;
-  status: 'pending' | 'approved' | 'rejected';
+  teamName?: string;
+  region?: string;
+  captainName?: string;
+  captainPhone?: string;
+  captainEmail?: string;
+  members?: {
+    fullName: string;
+    phone: string;
+    email: string;
+  }[];
+  status: RegistrationStatus;
   registeredAt: string;
+  approvedAt?: string;
+  rejectedAt?: string;
+  withdrawnAt?: string;
+  reason?: string;
 }
 
 export interface RegistrationStatusResponse {
-  status: 'pending' | 'approved' | 'rejected';
+  status: RegistrationStatus;
   team?: Team;
+  registration?: Registration;
 }
 
 export interface CommentReply {

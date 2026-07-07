@@ -2,10 +2,11 @@ import { useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import {
   Calendar, Users, MapPin, CheckCircle, FileText,
-  Edit3, Save, X, ClipboardList, Plus, LogOut,
+  Edit3, Save, X, ClipboardList, Plus, LogOut, Clock,
 } from 'lucide-react';
 import { useAppStore } from '@/store';
 import { Button, Modal } from '@/components/ui';
+import { getCompetitionStatus } from '@/utils/helpers';
 import {
   getRegistrations as getRegistrationsFromStorage,
   saveRegistration as saveRegistrationToStorage,
@@ -29,6 +30,7 @@ export default function HackathonDetail() {
   const { id } = useParams<{ id: string }>();
   const { getHackathonById, isAuthenticated, user, submissions, teams, deleteSubmission } = useAppStore();
   const hackathon = getHackathonById(id!);
+  const competitionStatus = hackathon ? getCompetitionStatus(hackathon) : 'draft';
 
   // 报名管理状态
   const [showRegModal, setShowRegModal] = useState(false);
@@ -71,7 +73,7 @@ export default function HackathonDetail() {
     });
   };
 
-  const totalPrize = hackathon.prizes.reduce((sum, p) => sum + p.amount, 0);
+  const totalPrize = (hackathon.prizes || []).reduce((sum, p) => sum + p.amount, 0);
 
   // ===== 报名信息管理函数 =====
   const openEditRegistration = () => {
@@ -171,17 +173,20 @@ export default function HackathonDetail() {
   const handleWithdraw = () => {
     if (!user || !hackathon) return;
     const regs = getRegistrationsFromStorage();
-    delete regs[`${hackathon.id}_${user.id}`];
-    localStorage.setItem('hackathon_registrations', JSON.stringify(regs));
+    const regKey = `${hackathon.id}_${user.id}`;
+    if (regs[regKey]) {
+      regs[regKey] = { ...regs[regKey], status: 'withdrawn' as const };
+      localStorage.setItem('hackathon_registrations', JSON.stringify(regs));
+    }
 
     // 同步删除该竞赛下属于当前用户的提交作品
     const userTeamIds = new Set(teams.filter(t => t.members.some(m => m.id === user.id)).map(t => t.id));
     submissions
       .filter(s =>
-        s.hackathonId === hackathon.id &&
-        (userTeamIds.has(s.teamId) || s.teamId.startsWith(`reg_${user.id}_`))
+        String(s.hackathonId) === String(hackathon.id) &&
+        (userTeamIds.has(String(s.teamId)) || String(s.teamId).startsWith(`reg_${user.id}_`))
       )
-      .forEach(s => deleteSubmission(s.id));
+      .forEach(s => deleteSubmission(String(s.id)));
 
     setShowWithdrawModal(false);
   };
@@ -197,17 +202,27 @@ export default function HackathonDetail() {
         <div className="absolute inset-0 bg-gradient-to-t from-slate-900 via-slate-900/50 to-transparent" />
         <div className="absolute bottom-0 left-0 right-0 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pb-8">
           <div className="flex items-center gap-3 mb-4">
-            {hackathon.status === 'ongoing' && (
-              <span className="px-3 py-1 rounded-full bg-green-500/20 text-green-400 text-sm font-medium">
-                进行中
+            {competitionStatus === 'registration_open' && (
+              <span className="px-3 py-1 rounded-full bg-amber-500/20 text-amber-400 text-sm font-medium">
+                报名中
               </span>
             )}
-            {hackathon.status === 'upcoming' && (
+            {competitionStatus === 'registration_closed' && new Date().getTime() < new Date(hackathon.registrationOpenTime || hackathon.startDate || '').getTime() && (
               <span className="px-3 py-1 rounded-full bg-blue-500/20 text-blue-400 text-sm font-medium">
                 即将开始
               </span>
             )}
-            {hackathon.status === 'completed' && (
+            {competitionStatus === 'competition_running' && (
+              <span className="px-3 py-1 rounded-full bg-green-500/20 text-green-400 text-sm font-medium">
+                进行中
+              </span>
+            )}
+            {competitionStatus === 'judging' && (
+              <span className="px-3 py-1 rounded-full bg-purple-500/20 text-purple-400 text-sm font-medium">
+                评审中
+              </span>
+            )}
+            {competitionStatus === 'results_announced' && (
               <span className="px-3 py-1 rounded-full bg-slate-500/20 text-slate-400 text-sm font-medium">
                 已结束
               </span>
@@ -222,7 +237,19 @@ export default function HackathonDetail() {
           <div className="flex flex-wrap gap-6 text-slate-300">
             <div className="flex items-center gap-2">
               <Calendar className="w-5 h-5" />
-              <span>{formatDate(hackathon.startDate)} - {formatDate(hackathon.endDate)}</span>
+              <span>{formatDate(hackathon.startDate || '')} - {formatDate(hackathon.endDate || '')}</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <Clock className="w-5 h-5 text-amber-400" />
+              <span className={competitionStatus === 'registration_open' ? 'text-amber-400' : ''}>
+                {competitionStatus === 'registration_open' && hackathon.registrationDeadline
+                  ? `报名中 · 截止 ${formatDate(hackathon.registrationDeadline || '')}`
+                  : competitionStatus === 'competition_running'
+                    ? '比赛进行中'
+                    : competitionStatus === 'registration_closed' && new Date().getTime() < new Date(hackathon.registrationOpenTime || hackathon.startDate || '').getTime()
+                      ? `报名未开始 · ${formatDate(hackathon.registrationOpenTime || hackathon.startDate || '')}开启`
+                      : '报名已结束'}
+              </span>
             </div>
             <div className="flex items-center gap-2">
               <Users className="w-5 h-5" />
@@ -247,7 +274,7 @@ export default function HackathonDetail() {
             <div className="glass rounded-2xl p-6">
               <h2 className="text-xl font-semibold text-white mb-4">竞赛规则</h2>
               <ul className="space-y-3">
-                {hackathon.rules.map((rule, index) => (
+                {(hackathon.rules || []).map((rule, index) => (
                   <li key={index} className="flex items-start gap-3">
                     <CheckCircle className="w-5 h-5 text-green-500 flex-shrink-0 mt-0.5" />
                     <span className="text-slate-300">{rule}</span>
@@ -261,7 +288,7 @@ export default function HackathonDetail() {
             <div className="glass rounded-2xl p-6">
               <h2 className="text-xl font-semibold text-white mb-4">奖项设置</h2>
               <div className="space-y-4">
-                {hackathon.prizes.map((prize) => (
+                {(hackathon.prizes || []).map((prize) => (
                   <div key={prize.rank} className="flex items-center justify-between p-4 rounded-xl bg-gradient-to-r from-slate-800 to-slate-700/50">
                     <div className="flex items-center gap-3">
                       <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold ${
@@ -286,7 +313,7 @@ export default function HackathonDetail() {
             <div className="glass rounded-2xl p-6">
               <h2 className="text-xl font-semibold text-white mb-4">主办方</h2>
               <div className="flex flex-wrap gap-2">
-                {hackathon.organizers.map((organizer) => (
+                {(hackathon.organizers || []).map((organizer) => (
                   <span key={organizer} className="px-4 py-2 rounded-full bg-slate-700/50 text-slate-300">
                     {organizer}
                   </span>
@@ -297,7 +324,7 @@ export default function HackathonDetail() {
             <div className="glass rounded-2xl p-6">
               <h2 className="text-xl font-semibold text-white mb-4">分类标签</h2>
               <div className="flex flex-wrap gap-2">
-                {hackathon.categories.map((category) => (
+                {(hackathon.categories || []).map((category) => (
                   <span key={category} className="px-4 py-2 rounded-full bg-blue-500/10 text-blue-400">
                     {category}
                   </span>
@@ -307,71 +334,100 @@ export default function HackathonDetail() {
 
             <div className="flex flex-col gap-3">
               {isAuthenticated ? (
-                hasRegistered && myRegistration ? (
+                hasRegistered && myRegistration && myRegistration.status !== 'withdrawn' ? (
                   <>
-                    {/* 报名信息摘要 */}
                     <div className="p-4 bg-purple-500/10 rounded-xl border border-purple-500/20">
                       <div className="flex items-center justify-between mb-2">
                         <span className="text-sm font-medium text-slate-300 flex items-center gap-1.5">
                           <ClipboardList className="w-4 h-4 text-purple-400" />
-                          已报名
+                          {myRegistration.status === 'pending' ? '报名待审核' : 
+                           myRegistration.status === 'approved' ? '报名已通过' :
+                           myRegistration.status === 'rejected' ? '报名已拒绝' : '已退赛'}
                         </span>
                         <div className="flex gap-1.5">
-                          <button
-                            onClick={openWithdrawModal}
-                            className="p-1.5 rounded-lg text-slate-400 hover:text-red-400 hover:bg-red-500/10 transition-colors"
-                            title="退赛"
-                          >
-                            <LogOut className="w-4 h-4" />
-                          </button>
-                          <button
-                            onClick={openEditRegistration}
-                            className="p-1.5 rounded-lg text-slate-400 hover:text-green-400 hover:bg-green-500/10 transition-colors"
-                            title="修改报名信息"
-                          >
-                            <Edit3 className="w-4 h-4" />
-                          </button>
+                          {myRegistration.status === 'approved' && (
+                            <button
+                              onClick={openWithdrawModal}
+                              className="p-1.5 rounded-lg text-slate-400 hover:text-red-400 hover:bg-red-500/10 transition-colors"
+                              title="退赛"
+                            >
+                              <LogOut className="w-4 h-4" />
+                            </button>
+                          )}
+                          {(myRegistration.status === 'pending' || myRegistration.status === 'approved') && (
+                            <button
+                              onClick={openEditRegistration}
+                              className="p-1.5 rounded-lg text-slate-400 hover:text-green-400 hover:bg-green-500/10 transition-colors"
+                              title="修改报名信息"
+                            >
+                              <Edit3 className="w-4 h-4" />
+                            </button>
+                          )}
                         </div>
                       </div>
                       <p className="text-white text-sm font-medium">{myRegistration.teamName}</p>
                       <p className="text-slate-500 text-xs mt-0.5">
                         {getRegionLabel(myRegistration.region)} · {(myRegistration.members?.length ?? 0) + 1}人 · 队长: {myRegistration.captainName}
                       </p>
+                      {myRegistration.status === 'pending' && (
+                        <div className="mt-2 flex items-center gap-1 text-blue-400 text-xs">
+                          <Clock className="w-3 h-3" />
+                          等待审核中，请留意邮箱通知
+                        </div>
+                      )}
+                      {myRegistration.status === 'rejected' && (
+                        <div className="mt-2 text-red-400 text-xs">
+                          报名未通过审核，请重新报名
+                        </div>
+                      )}
                     </div>
 
-                    <Link
-                      to="/my-submissions"
-                      className="w-full py-4 rounded-xl btn-gradient text-white font-semibold flex items-center justify-center gap-2 hover:opacity-90 transition-opacity"
-                    >
-                      <FileText className="w-5 h-5" />
-                      提交作品
-                    </Link>
+                    {myRegistration.status === 'approved' && competitionStatus === 'competition_running' && (
+                      <Link
+                        to="/my-submissions"
+                        className="w-full py-4 rounded-xl btn-gradient text-white font-semibold flex items-center justify-center gap-2 hover:opacity-90 transition-opacity"
+                      >
+                        <FileText className="w-5 h-5" />
+                        提交作品
+                      </Link>
+                    )}
                   </>
                 ) : (
-                  hackathon.status === 'ongoing' ? (
+                  competitionStatus === 'registration_open' ? (
                     <Link
                       to={`/hackathons/${hackathon.id}/register`}
                       className="w-full py-4 rounded-xl btn-gradient text-white font-semibold flex items-center justify-center gap-2 hover:opacity-90 transition-opacity"
                     >
                       <Users className="w-5 h-5" />
-                      报名
+                      立即报名
                     </Link>
                   ) : (
-                    <div
-                      className={`w-full py-4 rounded-xl font-semibold flex items-center justify-center gap-2 ${
-                        hackathon.status === 'upcoming'
-                          ? 'bg-slate-700/50 text-slate-400'
-                          : 'bg-slate-700/50 text-slate-500'
-                      }`}
-                    >
-                      <Users className="w-5 h-5" />
-                      {hackathon.status === 'upcoming' ? '报名未开始' : '报名已结束'}
-                    </div>
+                    <>
+                      <div
+                        className={`w-full py-4 rounded-xl font-semibold flex items-center justify-center gap-2 ${
+                          competitionStatus === 'registration_closed' && new Date().getTime() < new Date(hackathon.registrationOpenTime || hackathon.startDate || '').getTime()
+                            ? 'bg-slate-700/50 text-slate-400'
+                            : 'bg-slate-700/50 text-slate-500'
+                        }`}
+                      >
+                        <Users className="w-5 h-5" />
+                        {competitionStatus === 'registration_closed' && new Date().getTime() < new Date(hackathon.registrationOpenTime || hackathon.startDate || '').getTime()
+                          ? '报名未开始'
+                          : competitionStatus === 'competition_running'
+                            ? '比赛进行中'
+                            : '报名已结束'}
+                      </div>
+                      {competitionStatus === 'registration_closed' && new Date().getTime() < new Date(hackathon.registrationOpenTime || hackathon.startDate || '').getTime() && (
+                        <p className="text-center text-slate-500 text-sm">
+                          报名将于 {new Date(hackathon.registrationOpenTime || hackathon.startDate || '').toLocaleDateString('zh-CN', { month: 'long', day: 'numeric' })} 开启
+                        </p>
+                      )}
+                    </>
                   )
                 )
               ) : (
                 <>
-                  {hackathon.status === 'ongoing' ? (
+                  {competitionStatus === 'registration_open' ? (
                     <Link
                       to="/login"
                       className="w-full py-4 rounded-xl btn-gradient text-white font-semibold flex items-center justify-center gap-2 hover:opacity-90 transition-opacity"
@@ -381,12 +437,16 @@ export default function HackathonDetail() {
                   ) : (
                     <div
                       className={`w-full py-4 rounded-xl font-semibold flex items-center justify-center gap-2 ${
-                        hackathon.status === 'upcoming'
+                        competitionStatus === 'registration_closed' && new Date().getTime() < new Date(hackathon.registrationOpenTime || hackathon.startDate || '').getTime()
                           ? 'bg-slate-700/50 text-slate-400'
                           : 'bg-slate-700/50 text-slate-500'
                       }`}
                     >
-                      {hackathon.status === 'upcoming' ? '报名未开始' : '报名已结束'}
+                      {competitionStatus === 'registration_closed' && new Date().getTime() < new Date(hackathon.registrationOpenTime || hackathon.startDate || '').getTime()
+                        ? '报名未开始'
+                        : competitionStatus === 'competition_running'
+                          ? '比赛进行中'
+                          : '报名已结束'}
                     </div>
                   )}
                   <p className="text-center text-slate-400 text-sm">
@@ -581,7 +641,7 @@ export default function HackathonDetail() {
               </div>
               <button
                 type="button"
-                onClick={() => updateRegField('members', [...regEditForm.members, { id: String(Date.now()), fullName: '', phone: '', email: '' }])}
+                onClick={() => updateRegField('members', [...regEditForm.members, { id: String(Date.now()), fullName: '', phone: '', email: '', memberType: 'unregistered' }])}
                 className="mt-3 flex items-center gap-2 px-3 py-1.5 rounded-lg border border-slate-600 text-slate-300 hover:bg-slate-800 transition-colors text-sm"
               >
                 <Plus className="w-4 h-4" /> 添加成员

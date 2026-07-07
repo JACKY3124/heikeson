@@ -1,4 +1,4 @@
-﻿import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import {
   Trophy,
@@ -33,23 +33,23 @@ export default function ViewerCenter() {
     return initial;
   });
   const [likedSubmissions, setLikedSubmissions] = useState<string[]>([]);
-  const [filterStatus, setFilterStatus] = useState<'all' | 'ongoing' | 'upcoming' | 'completed'>('all');
+  const [filterStatus, setFilterStatus] = useState<'all' | 'competition_running' | 'registration_open' | 'results_announced'>('all');
 
-  const activeHackathons = hackathons.filter((h) => h.status === 'ongoing');
-  const upcomingHackathons = hackathons.filter((h) => h.status === 'upcoming');
+  const activeHackathons = hackathons.filter((h) => h.status === 'competition_running');
+  const upcomingHackathons = hackathons.filter((h) => h.status === 'registration_open');
 
   const filteredSubmissions = submissions
     .filter((s) => {
       if (filterStatus === 'all') return true;
       const h = hackathons.find((hh) => hh.id === s.hackathonId);
       if (!h) return false;
-      if (filterStatus === 'completed') return h.status === 'completed';
+      if (filterStatus === 'results_announced') return h.status === 'results_announced';
       return h.status === filterStatus;
     })
     .slice(0, 6);
 
   const sortedAnnouncements = [...announcements].sort(
-    (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
+    (a, b) => new Date(b.date || b.createdAt || '').getTime() - new Date(a.date || a.createdAt || '').getTime()
   );
   const latestAnnouncement = sortedAnnouncements[0];
   const announcementsToShow = sortedAnnouncements.slice(1);
@@ -231,9 +231,9 @@ export default function ViewerCenter() {
               </div>
               <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
                 {filteredSubmissions.map((submission) => {
-                  const submissionTeam = teams.find((t) => t.id === submission.teamId);
-                  const submissionHackathon = hackathons.find((h) => h.id === submission.hackathonId);
-                  const liked = likedSubmissions.includes(submission.id);
+                  const submissionTeam = teams.find((t) => t.id === String(submission.teamId));
+                  const submissionHackathon = hackathons.find((h) => h.id === String(submission.hackathonId));
+                  const liked = likedSubmissions.includes(String(submission.id));
                   return (
                     <div key={submission.id} className="rounded-[32px] border border-slate-700/60 bg-slate-950/80 shadow-xl overflow-hidden">
                       <div className="relative h-56 overflow-hidden">
@@ -262,11 +262,11 @@ export default function ViewerCenter() {
                         <div className="mt-5 flex items-center justify-start gap-2 text-slate-400 text-sm">
                           <button
                             type="button"
-                            onClick={() => handleToggleLike(submission.id)}
+                            onClick={() => handleToggleLike(String(submission.id))}
                             className={`inline-flex items-center gap-2 rounded-full px-3 py-2 text-xs font-medium transition-colors ${liked ? 'bg-pink-500/15 text-pink-300' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'}`}
                           >
                             <Heart className="w-4 h-4" />
-                            {likeCounts[submission.id] ?? 0}
+                            {likeCounts[String(submission.id)] ?? 0}
                           </button>
                           <button
                             type="button"
@@ -337,7 +337,7 @@ export default function ViewerCenter() {
                         <p className="text-white text-sm font-medium">{hackathon.title}</p>
                         <p className="text-slate-500 text-xs">{hackathon.startDate} - {hackathon.endDate}</p>
                       </div>
-                      <span className="rounded-full bg-slate-800 px-3 py-1 text-xs text-slate-300">{hackathon.status === 'ongoing' ? '进行中' : hackathon.status === 'upcoming' ? '即将开始' : '已结束'}</span>
+                      <span className="rounded-full bg-slate-800 px-3 py-1 text-xs text-slate-300">{hackathon.status === 'competition_running' ? '进行中' : hackathon.status === 'registration_open' ? '报名中' : '已结束'}</span>
                     </div>
                   </Link>
                 ))}

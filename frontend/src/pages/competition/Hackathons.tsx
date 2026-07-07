@@ -6,7 +6,7 @@ import HackathonCard from '@/components/HackathonCard';
 export default function Hackathons() {
   const { hackathons } = useAppStore();
   const [searchQuery, setSearchQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState<'all' | 'upcoming' | 'ongoing' | 'completed'>('all');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'registration_open' | 'competition_running' | 'results_announced'>('all');
   const [sortBy, setSortBy] = useState<'date' | 'participants' | 'prize'>('date');
 
   const filteredHackathons = hackathons
@@ -20,12 +20,12 @@ export default function Hackathons() {
     .sort((a, b) => {
       switch (sortBy) {
         case 'date':
-          return new Date(a.startDate).getTime() - new Date(b.startDate).getTime();
+          return new Date(a.startDate || '').getTime() - new Date(b.startDate || '').getTime();
         case 'participants':
-          return b.currentParticipants - a.currentParticipants;
+          return (b.currentParticipants ?? 0) - (a.currentParticipants ?? 0);
         case 'prize':
-          const prizeA = a.prizes.reduce((sum, p) => sum + p.amount, 0);
-          const prizeB = b.prizes.reduce((sum, p) => sum + p.amount, 0);
+          const prizeA = (a.prizes ?? []).reduce((sum, p) => sum + p.amount, 0);
+          const prizeB = (b.prizes ?? []).reduce((sum, p) => sum + p.amount, 0);
           return prizeB - prizeA;
         default:
           return 0;
@@ -34,7 +34,7 @@ export default function Hackathons() {
 
   const stats = [
     { icon: Calendar, label: '全部竞赛', value: hackathons.length },
-    { icon: Users, label: '总参赛者', value: hackathons.reduce((sum, h) => sum + h.currentParticipants, 0) },
+    { icon: Users, label: '总参赛者', value: hackathons.reduce((sum, h) => sum + (h.currentParticipants ?? 0), 0) },
     { icon: MapPin, label: '举办城市', value: new Set(hackathons.map(h => h.location)).size },
   ];
 

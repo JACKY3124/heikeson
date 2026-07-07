@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { useAppStore } from '@/store';
 import type { Team, Submission, ScoreRecord } from '@/types';
+import { getCompetitionStatus } from '@/utils/helpers';
 
 interface DisplayEntry {
   rank: number;
@@ -29,7 +30,10 @@ export default function Leaderboard() {
   const [showSuggestions, setShowSuggestions] = useState(false);
 
   const activeHackathons = hackathons.filter(
-    h => h.status === 'ongoing' || h.status === 'completed'
+    h => {
+      const status = getCompetitionStatus(h);
+      return status === 'judging' || status === 'results_announced';
+    }
   );
 
   const criteria = scoringConfig.criteria;
@@ -38,11 +42,11 @@ export default function Leaderboard() {
   const displayLeaderboard: DisplayEntry[] = selectedHackathon === 'all'
     ? (scoreRecords
         .reduce<DisplayEntry[]>((acc, record) => {
-          let team = teams.find(t => t.id === record.teamId);
-          if (!team && record.teamId.startsWith('reg_')) {
-            const userId = record.teamId.replace(/^reg_/, '').split('_')[0];
+          let team = teams.find(t => t.id === String(record.teamId));
+          if (!team && String(record.teamId).startsWith('reg_')) {
+            const userId = String(record.teamId).replace(/^reg_/, '').split('_')[0];
             const submitter = users.find(u => u.id === userId);
-            if (submitter) team = { id: record.teamId, name: `${submitter.name} 的团队`, description: '', members: [submitter], hackathonId: record.hackathonId, createdAt: new Date().toISOString(), maxMembers: 5, minMembers: 1, leaderId: submitter.id };
+            if (submitter) team = { id: String(record.teamId), name: `${submitter.name} 的团队`, description: '', members: [submitter], hackathonId: String(record.hackathonId), createdAt: new Date().toISOString(), maxMembers: 5, minMembers: 1, leaderId: String(submitter.id) };
           }
           const submission = submissions.find(s => s.id === record.submissionId);
           if (!team || !submission) return acc;
@@ -140,10 +144,10 @@ export default function Leaderboard() {
             </button>
             {activeHackathons.map(h => (
               <button
-                key={h.id}
-                onClick={() => { setSelectedHackathon(h.id); setSearchQuery(''); }}
+                key={String(h.id)}
+                onClick={() => { setSelectedHackathon(String(h.id)); setSearchQuery(''); }}
                 className={`px-4 py-2.5 rounded-xl text-sm font-medium transition-all flex items-center gap-2 ${
-                  selectedHackathon === h.id
+                  selectedHackathon === String(h.id)
                     ? 'bg-blue-500 text-white shadow-lg shadow-blue-500/20'
                     : 'bg-slate-800/60 text-slate-400 hover:text-white hover:bg-slate-800'
                 }`}
@@ -181,11 +185,11 @@ export default function Leaderboard() {
               <div className="absolute left-0 right-0 top-full mt-1 bg-slate-900 border border-slate-700/50 rounded-xl shadow-xl overflow-hidden z-50">
                 {searchSuggestions.map(h => (
                   <button
-                    key={h.id}
+                    key={String(h.id)}
                     onMouseDown={e => e.preventDefault()}
                     onClick={() => {
                       setSearchQuery(h.title);
-                      setSelectedHackathon(h.id);
+                      setSelectedHackathon(String(h.id));
                       setShowSuggestions(false);
                     }}
                     className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-slate-800 transition-colors border-b border-slate-800 last:border-0"
@@ -194,7 +198,7 @@ export default function Leaderboard() {
                     <div className="flex-1 min-w-0">
                       <p className="text-sm text-white truncate">{highlightMatch(h.title, searchQuery)}</p>
                       <p className="text-xs text-slate-500 mt-0.5">
-                        {h.status === 'ongoing' ? '进行中' : h.status === 'completed' ? '已结束' : '即将开始'}
+                        {h.status === 'competition_running' ? '进行中' : h.status === 'judging' ? '评审中' : '已结束'}
                       </p>
                     </div>
                   </button>
@@ -273,9 +277,9 @@ export default function Leaderboard() {
                   <RankRow
                     key={entry.rank}
                     entry={entry}
-                    isExpanded={expandedEntry === entry.submission.id}
+                    isExpanded={expandedEntry === String(entry.submission.id)}
                     onToggle={() => setExpandedEntry(
-                      expandedEntry === entry.submission.id ? null : entry.submission.id
+                      expandedEntry === String(entry.submission.id) ? null : String(entry.submission.id)
                     )}
                     criteria={criteria}
                   />
