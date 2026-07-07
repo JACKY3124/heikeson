@@ -23,6 +23,10 @@ Thumbs.db
 node_modules/
 dist/
 
+# Vite
+*.timestamp-*.mjs
+.vite/
+
 # 环境敏感文件
 application-local.yml
 *.env
