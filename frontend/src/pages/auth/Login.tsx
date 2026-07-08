@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Link, Navigate } from 'react-router-dom';
 import { Mail, Lock, Eye, EyeOff, LogIn, Loader2, UserCheck, UserCircle, ShieldCheck, Star } from 'lucide-react';
 import { useAppStore } from '@/store';
+import loginBg from '@/picture/登录.jpg';
 
 const DEMO_ACCOUNTS = [
   { label: '选手账号', email: 'zhangyu@example.com', password: 'demo123', icon: UserCheck, color: 'blue' },
@@ -49,8 +50,10 @@ export default function Login() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-900 grid-bg flex items-center justify-center py-12 px-4">
-      <div className="w-full max-w-md">
+    <div className="min-h-screen flex items-center py-12 px-4 relative overflow-hidden">
+      <div className="absolute inset-0 bg-cover bg-center" style={{ backgroundImage: `url(${loginBg})` }} />
+      <div className="absolute inset-0 bg-black/60" />
+      <div className="w-full max-w-md ml-[55%]">
         <div className="glass rounded-2xl p-8">
           <div className="text-center mb-8">
             <div className="w-16 h-16 mx-auto mb-4 rounded-2xl btn-gradient flex items-center justify-center">
