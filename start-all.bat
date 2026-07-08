@@ -45,7 +45,7 @@ REM 等待3秒让后端先启动
 timeout /t 3 /nobreak > nul
 
 REM 启动前端（新窗口）
-start "前端 Vue3+Vite" cmd /k "cd /d "%~dp0frontend" && npm run dev"
+start "前端 React+Vite" cmd /k "cd /d "%~dp0frontend" && if not exist node_modules\react (npm install) && npm run dev"
 
 echo.
 echo 服务已启动！请查看弹出的命令窗口

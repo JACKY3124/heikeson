@@ -5,14 +5,14 @@
 
 ## 技术栈
 - **后端**：Spring Boot 2.7 + JPA + MySQL 9.7
-- **前端**：Vue 3 + Vite + Vue Router + Axios
+- **前端**：React 18 + TypeScript + Vite + Tailwind CSS + Axios
 - **构建工具**：Maven (后端) / npm (前端)
 
 ## 项目结构
 ```
 hackathon-platform/
 ├── backend/                 # Spring Boot 后端
-├── frontend/                # Vue 3 前端
+├── frontend/                # React + TypeScript 前端
 ├── sql/                     # 数据库脚本
 ├── docs/                    # 项目文档
 └── README.md
