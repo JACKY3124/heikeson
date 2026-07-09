@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Mail, Lock, User, UserPlus, Eye, EyeOff } from 'lucide-react';
 import { useAppStore } from '@/store';
+import registerBg from '@/picture/注册.jpg';
 
 export default function Register() {
   const [name, setName] = useState('');
@@ -53,8 +54,10 @@ export default function Register() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-900 grid-bg flex items-center justify-center py-12 px-4">
-      <div className="w-full max-w-md">
+    <div className="min-h-screen flex items-center py-12 px-4 relative overflow-hidden">
+      <div className="absolute inset-0 bg-cover bg-center" style={{ backgroundImage: `url(${registerBg})` }} />
+      <div className="absolute inset-0 bg-black/60" />
+      <div className="w-full max-w-md ml-[55%]">
         <div className="glass rounded-2xl p-8">
           <div className="text-center mb-8">
             <div className="w-16 h-16 mx-auto mb-4 rounded-2xl btn-gradient flex items-center justify-center">
