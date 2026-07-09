@@ -8,7 +8,7 @@ echo.
 REM 检查 Java
 java -version > nul 2>&1
 if errorlevel 1 (
-    echo [错误] 未找到 Java，请安装 Java 1.8+
+    echo [错误] 未找到 Java，请安装 Java 17
     pause
     exit /b 1
 )
@@ -39,7 +39,7 @@ echo ================================================
 echo.
 
 REM 启动后端（新窗口）
-start "后端 Spring Boot" cmd /k "cd /d "%~dp0backend" && set JAVA_HOME=D:\java && set M2_HOME=D:\tools\apache-maven-3.9.9 && set PATH=%%JAVA_HOME%%\bin;%%M2_HOME%%\bin;%%PATH%% && "%M2_HOME%\bin\mvn.cmd" spring-boot:run"
+start "后端 Spring Boot" cmd /k "cd /d "%~dp0backend" && set JAVA_HOME=D:\tools\jdk-17.0.2 && set M2_HOME=D:\tools\apache-maven-3.9.9 && set PATH=%%JAVA_HOME%%\bin;%%M2_HOME%%\bin;%%PATH%% && "%M2_HOME%\bin\mvn.cmd" spring-boot:run"
 
 REM 等待3秒让后端先启动
 timeout /t 3 /nobreak > nul

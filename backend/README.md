@@ -46,12 +46,12 @@ backend/
 编辑 `src/main/resources/application.properties`：
 
 ```properties
-spring.datasource.url=jdbc:mysql://localhost:3306/hackathon
+spring.datasource.url=jdbc:mysql://localhost:3306/hackathon_platform
 spring.datasource.username=你的用户名
 spring.datasource.password=你的密码
 ```
 
-确保本地 MySQL 已创建数据库 `hackathon`。
+确保本地 MySQL 已创建数据库 `hackathon_platform`。
 
 ## 运行
 

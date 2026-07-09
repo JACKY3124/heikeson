@@ -6,7 +6,7 @@ echo ================================================
 echo.
 
 REM 设置环境变量
-set JAVA_HOME=D:\java
+set JAVA_HOME=D:\tools\jdk-17.0.2
 set M2_HOME=D:\tools\apache-maven-3.9.9
 set PATH=%JAVA_HOME%\bin;%M2_HOME%\bin;%PATH%
 
