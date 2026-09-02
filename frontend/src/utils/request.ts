@@ -39,9 +39,15 @@ request.interceptors.response.use(
 
     switch (status) {
       case 401:
-        localStorage.removeItem('token');
-        localStorage.removeItem('user');
-        window.location.href = '/login';
+        // Mock 阶段登录不产生 token，受保护接口（如 /api/player/**）会 401。
+        // 仅当确实持有过登录态（token 失效/过期）时才强制回登录页，避免 Mock 演示被踢出。
+        if (localStorage.getItem('token')) {
+          localStorage.removeItem('token');
+          localStorage.removeItem('user');
+          if (!window.location.pathname.startsWith('/login')) {
+            window.location.href = '/login';
+          }
+        }
         break;
       case 403:
         console.error('无权限访问');

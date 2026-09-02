@@ -35,8 +35,12 @@ export const getCompetitionById = async (id: number): Promise<Hackathon> => {
   return result;
 };
 
-export const registerCompetition = async (id: number, data: RegisterRequest): Promise<Registration> => {
-  const result = await post<Registration>(`/api/competitions/${id}/register`, data);
+export const registerCompetition = async (id: number | string, data: RegisterRequest): Promise<Registration> => {
+  const competitionId = typeof id === 'string' ? Number(id) : id;
+  if (Number.isNaN(competitionId)) {
+    throw new Error('赛事 ID 无效，无法提交后端报名');
+  }
+  const result = await post<Registration>(`/api/player/registrations`, { ...data, competitionId });
   return result;
 };
 

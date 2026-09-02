@@ -382,7 +382,7 @@ export default function HackathonDetail() {
                       )}
                     </div>
 
-                    {myRegistration.status === 'approved' && competitionStatus === 'competition_running' && (
+                    {myRegistration.status === 'approved' && (competitionStatus === 'competition_running' || competitionStatus === 'registration_open') && (
                       <Link
                         to="/my-submissions"
                         className="w-full py-4 rounded-xl btn-gradient text-white font-semibold flex items-center justify-center gap-2 hover:opacity-90 transition-opacity"

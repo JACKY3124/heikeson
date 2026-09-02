@@ -97,6 +97,29 @@ interface AppState {
   deleteUser: (userId: string) => boolean;
 }
 
+// 用户提交的作品持久化（刷新不丢失）：
+// mock 作品仍在内存，用户自己提交/删除的作品读写 localStorage（key: hackathon_user_submissions）
+const USER_SUBMISSIONS_KEY = 'hackathon_user_submissions';
+
+function loadUserSubmissions(): Submission[] {
+  try {
+    const raw = localStorage.getItem(USER_SUBMISSIONS_KEY);
+    if (!raw) return [];
+    const list = JSON.parse(raw);
+    return Array.isArray(list) ? list : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveUserSubmissions(list: Submission[]) {
+  try {
+    localStorage.setItem(USER_SUBMISSIONS_KEY, JSON.stringify(list));
+  } catch {
+    // 存储失败静默降级（如隐私模式/空间不足）
+  }
+}
+
 export const useAppStore = create<AppState>((set, get) => ({
   user: null,
   isAuthenticated: false,
@@ -106,7 +129,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   hackathons: mockHackathons,
   teams: mockTeams,
   joinRequests: [],
-  submissions: [...mockSubmissions, ...mockAdditionalSubmissions],
+  submissions: [...mockSubmissions, ...mockAdditionalSubmissions, ...loadUserSubmissions()],
   leaderboard: mockLeaderboard,
   scoreRecords: mockScoreRecords,
   scoringConfig: mockScoringConfig,
@@ -510,6 +533,9 @@ export const useAppStore = create<AppState>((set, get) => ({
       submissions: [...state.submissions, newSubmission],
     }));
 
+    // 持久化到 localStorage，刷新后仍存在
+    saveUserSubmissions([...loadUserSubmissions(), newSubmission]);
+
     return newSubmission;
   },
 
@@ -534,6 +560,9 @@ export const useAppStore = create<AppState>((set, get) => ({
       submissions: state.submissions.filter(s => s.id !== submissionId),
       scoreRecords: state.scoreRecords.filter(r => r.submissionId !== submissionId),
     }));
+
+    // 同步删除 localStorage 中持久化的用户作品
+    saveUserSubmissions(loadUserSubmissions().filter(s => s.id !== submissionId));
 
     return true;
   },

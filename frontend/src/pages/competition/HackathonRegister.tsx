@@ -7,29 +7,22 @@ import { registerCompetition } from '@/api/hackathon';
 import { getCompetitionStatus } from '@/utils/helpers';
 import type { User } from '@/types';
 
-export type MemberType = 'registered' | 'unregistered';
+import {
+  getRegistrations,
+  saveRegistration,
+  type MemberType,
+  type TeamMember,
+  type RegistrationData,
+} from '@/utils/registration';
 
-export interface TeamMember {
-  id: string;
-  fullName: string;
-  phone: string;
-  email: string;
-  memberType: MemberType;
-  userId?: string;
-}
-
-export interface RegistrationData {
-  hackathonId: string;
-  userId: string;
-  teamName: string;
-  captainName: string;
-  captainPhone: string;
-  captainEmail: string;
-  region: string;
-  members: TeamMember[];
-  submittedAt: string;
-  status: 'pending' | 'approved' | 'rejected' | 'withdrawn';
-}
+// 兼容导出：MySubmissions 等页面仍从本文件导入报名数据工具
+export {
+  getRegistrations,
+  saveRegistration,
+  type MemberType,
+  type TeamMember,
+  type RegistrationData,
+};
 
 interface RegistrationForm {
   captainName: string;
@@ -52,20 +45,6 @@ const REGIONS = [
 
 function createEmptyMember(id: string): TeamMember {
   return { id, fullName: '', phone: '', email: '', memberType: 'unregistered' };
-}
-
-export function getRegistrations(): Record<string, RegistrationData> {
-  try {
-    return JSON.parse(localStorage.getItem('hackathon_registrations') || '{}');
-  } catch {
-    return {};
-  }
-}
-
-export function saveRegistration(data: RegistrationData) {
-  const registrations = getRegistrations();
-  registrations[`${data.hackathonId}_${data.userId}`] = data;
-  localStorage.setItem('hackathon_registrations', JSON.stringify(registrations));
 }
 
 export default function HackathonRegister() {
@@ -323,8 +302,6 @@ export default function HackathonRegister() {
         agreeParticipation: form.agreeParticipation,
       };
 
-      await registerCompetition(parseInt(String(hackathon.id)), registerData);
-
       const teamMembers = validMembers.map(m => {
         if (m.memberType === 'registered' && m.userId) {
           const existingUser = users.find(u => String(u.id) === m.userId);
@@ -351,6 +328,7 @@ export default function HackathonRegister() {
         };
       });
 
+      // ===== Mock 主链路：本地创建队伍 + 保存报名记录（保证演示成功）=====
       createTeam(form.teamName, '', String(hackathon.id), teamMembers);
 
       if (hackathon && user) {
@@ -366,6 +344,15 @@ export default function HackathonRegister() {
           submittedAt: new Date().toISOString(),
           status: 'pending',
         });
+      }
+
+      // ===== 真实后端尽力而为：有登录 token 才尝试，失败静默降级不阻断 =====
+      if (localStorage.getItem('token')) {
+        try {
+          await registerCompetition(hackathon.id as any, registerData);
+        } catch (apiErr: any) {
+          console.warn('[报名] 后端接口暂不可用，已使用本地 Mock 数据：', apiErr?.message || apiErr);
+        }
       }
 
       setSubmitting(false);

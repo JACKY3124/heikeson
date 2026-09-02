@@ -245,7 +245,7 @@ export default function MySubmissions() {
       const hackathon = getHackathonById(formData.teamId);
       if (hackathon) {
         const status = getCompetitionStatus(hackathon);
-        if (status !== 'competition_running') {
+        if (status !== 'competition_running' && status !== 'registration_open') {
           errors.teamId = '当前竞赛不在作品提交阶段';
         }
 

@@ -6,6 +6,7 @@ import com.hackathon.dto.SubmissionResponseDTO;
 import com.hackathon.entity.*;
 import com.hackathon.exception.BusinessException;
 import com.hackathon.repository.*;
+import com.hackathon.service.scoring.AiScoringService;
 import com.hackathon.service.upload.FileUploadService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -33,6 +34,7 @@ public class SubmissionService {
     private final LikeRecordRepository likeRecordRepository;
     private final SecurityUtils securityUtils;
     private final FileUploadService fileUploadService;
+    private final AiScoringService aiScoringService;
 
     // ======================== 创建草稿 ========================
 
@@ -236,8 +238,41 @@ public class SubmissionService {
         submission.setSubmittedAt(LocalDateTime.now());
 
         Submission saved = submissionRepository.save(submission);
+
+        // 自动触发AI打分（失败不阻断提交流程）
+        try {
+            aiScoringService.runAIScoring(saved.getId());
+        } catch (Exception e) {
+            log.warn("自动AI打分失败（不影响提交）: submissionId={}, reason={}", saved.getId(), e.getMessage());
+        }
+
         log.info("作品正式提交: userId={}, competitionId={}, submissionId={}", userId, competition.getId(), saved.getId());
         return toResponseDTO(saved, currentUser, competition);
+    }
+
+    // ======================== 作品审批（管理员） ========================
+
+    /**
+     * 管理员审批作品（submitted → approved / rejected）
+     * - rejected 后选手可撤回修改重新提交
+     */
+    @Transactional
+    public SubmissionResponseDTO reviewSubmission(Long id, String decision) {
+        Submission submission = submissionRepository.findById(id)
+                .orElseThrow(() -> new BusinessException("作品不存在"));
+
+        if (!"submitted".equals(submission.getStatus()) && !"approved".equals(submission.getStatus())
+                && !"rejected".equals(submission.getStatus())) {
+            throw new BusinessException("仅已提交的作品可审批，当前状态：" + submission.getStatus());
+        }
+
+        submission.setStatus(decision);
+        Submission saved = submissionRepository.save(submission);
+        log.info("作品审批: submissionId={}, decision={}", id, decision);
+
+        User author = userRepository.findById(saved.getUserId()).orElse(null);
+        Competition competition = competitionRepository.findById(saved.getCompetitionId()).orElse(null);
+        return toResponseDTO(saved, author, competition);
     }
 
     // ======================== 撤回作品 ========================

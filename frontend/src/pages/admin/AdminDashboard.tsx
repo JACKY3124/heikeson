@@ -1,10 +1,11 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { Link } from 'react-router-dom';
-import { Settings, Users, Trophy, BarChart3, FileText, CheckCircle, RefreshCw, Save, Cpu, TrendingUp, Shield, AlertCircle, Pencil, Trash2, Plus } from 'lucide-react';
+import { Settings, Users, Trophy, BarChart3, FileText, CheckCircle, RefreshCw, Save, Cpu, TrendingUp, Shield, AlertCircle, Pencil, Trash2, Plus, ClipboardCheck, UserCheck, XCircle, Clock } from 'lucide-react';
 import { useAppStore } from '@/store';
 import type { ScoringConfig, UserRole, Hackathon, User } from '@/types';
 import { Modal } from '@/components/ui';
 import { getCompetitionStatus, validateDateOrder } from '@/utils/helpers';
+import { getRegistrations, updateRegistrationStatus, type RegistrationData } from '@/utils/registration';
 
 const roleConfig: Partial<Record<UserRole, { label: string; color: string }>> = {
   player: { label: '选手', color: 'text-blue-400 bg-blue-500/20' },
@@ -41,9 +42,11 @@ export default function AdminDashboard() {
     deleteHackathon,
   } = useAppStore();
 
-  const [activeTab, setActiveTab] = useState<'overview' | 'users' | 'competitions' | 'scoring' | 'analytics' | 'system'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'users' | 'competitions' | 'registrations' | 'scoring' | 'analytics' | 'system'>('overview');
   const [config, setConfig] = useState<ScoringConfig>(scoringConfig);
   const [saved, setSaved] = useState(false);
+  const [registrations, setRegistrations] = useState<Record<string, RegistrationData>>(() => getRegistrations());
+  const [regFilter, setRegFilter] = useState<'all' | 'pending' | 'approved' | 'rejected'>('all');
   const [runningAIScore, setRunningAIScore] = useState<string | null>(null);
   const [confirmRoleChange, setConfirmRoleChange] = useState<{ userId: string; newRole: UserRole } | null>(null);
   const [deletingUser, setDeletingUser] = useState<User | null>(null);
@@ -98,6 +101,37 @@ export default function AdminDashboard() {
     setTimeout(() => setRunningAIScore(null), 1500);
   };
 
+  // —— 报名审核 ——
+  const refreshRegistrations = () => setRegistrations(getRegistrations());
+
+  const handleApproveRegistration = (hackathonId: string, userId: string) => {
+    updateRegistrationStatus(hackathonId, userId, 'approved');
+    refreshRegistrations();
+  };
+
+  const handleRejectRegistration = (hackathonId: string, userId: string) => {
+    updateRegistrationStatus(hackathonId, userId, 'rejected');
+    refreshRegistrations();
+  };
+
+  const regList = useMemo(() => {
+    const list = Object.values(registrations)
+      .map(reg => ({
+        ...reg,
+        hackathonTitle: hackathons.find(h => String(h.id) === reg.hackathonId)?.title || reg.hackathonId,
+      }))
+      .sort((a, b) => new Date(b.submittedAt).getTime() - new Date(a.submittedAt).getTime());
+    if (regFilter === 'all') return list;
+    return list.filter(r => r.status === regFilter);
+  }, [registrations, regFilter, hackathons]);
+
+  const regStats = {
+    total: Object.keys(registrations).length,
+    pending: Object.values(registrations).filter(r => r.status === 'pending').length,
+    approved: Object.values(registrations).filter(r => r.status === 'approved').length,
+    rejected: Object.values(registrations).filter(r => r.status === 'rejected').length,
+  };
+
   const totalWeight = config.criteria.reduce((sum, c) => sum + c.weight, 0);
   const isWeightValid = Math.abs(totalWeight - 1) < 0.01;
 
@@ -114,6 +148,7 @@ export default function AdminDashboard() {
     { id: 'overview', label: '概览', icon: BarChart3 },
     { id: 'users', label: '用户管理', icon: Users },
     { id: 'competitions', label: '竞赛管理', icon: Trophy },
+    { id: 'registrations', label: '报名审核', icon: ClipboardCheck },
     { id: 'scoring', label: '评分配置', icon: Settings },
     { id: 'analytics', label: '数据分析', icon: TrendingUp },
   ];
@@ -467,6 +502,145 @@ export default function AdminDashboard() {
                   </div>
                 ))}
               </div>
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'registrations' && (
+          <div className="space-y-6">
+            <div className="grid md:grid-cols-4 gap-6">
+              <div className="p-4 bg-slate-800/50 rounded-lg">
+                <div className="flex items-center gap-3 mb-2">
+                  <ClipboardCheck className="w-5 h-5 text-blue-500" />
+                  <span className="text-slate-400">全部报名</span>
+                </div>
+                <p className="text-2xl font-bold text-white">{regStats.total}</p>
+              </div>
+              <div className="p-4 bg-slate-800/50 rounded-lg">
+                <div className="flex items-center gap-3 mb-2">
+                  <Clock className="w-5 h-5 text-yellow-500" />
+                  <span className="text-slate-400">待审核</span>
+                </div>
+                <p className="text-2xl font-bold text-yellow-400">{regStats.pending}</p>
+              </div>
+              <div className="p-4 bg-slate-800/50 rounded-lg">
+                <div className="flex items-center gap-3 mb-2">
+                  <UserCheck className="w-5 h-5 text-green-500" />
+                  <span className="text-slate-400">已通过</span>
+                </div>
+                <p className="text-2xl font-bold text-green-400">{regStats.approved}</p>
+              </div>
+              <div className="p-4 bg-slate-800/50 rounded-lg">
+                <div className="flex items-center gap-3 mb-2">
+                  <XCircle className="w-5 h-5 text-red-500" />
+                  <span className="text-slate-400">已拒绝</span>
+                </div>
+                <p className="text-2xl font-bold text-red-400">{regStats.rejected}</p>
+              </div>
+            </div>
+
+            <div className="glass rounded-xl p-6">
+              <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
+                <h2 className="text-xl font-semibold text-white">报名审核</h2>
+                <div className="flex items-center gap-2">
+                  <select
+                    value={regFilter}
+                    onChange={(e) => setRegFilter(e.target.value as typeof regFilter)}
+                    className="px-3 py-1.5 bg-slate-700 border border-slate-600 rounded-lg text-white text-sm appearance-none cursor-pointer focus:outline-none focus:border-blue-500 transition-colors"
+                  >
+                    <option value="all">全部状态</option>
+                    <option value="pending">待审核</option>
+                    <option value="approved">已通过</option>
+                    <option value="rejected">已拒绝</option>
+                  </select>
+                  <button
+                    onClick={refreshRegistrations}
+                    className="flex items-center gap-2 px-3 py-1.5 bg-slate-700 hover:bg-slate-600 rounded-lg text-sm text-white transition-colors"
+                  >
+                    <RefreshCw className="w-4 h-4" />
+                    刷新
+                  </button>
+                </div>
+              </div>
+
+              {regList.length === 0 ? (
+                <div className="text-center py-12">
+                  <ClipboardCheck className="w-12 h-12 mx-auto mb-3 text-slate-600" />
+                  <p className="text-slate-400">暂无报名记录，选手提交报名后会显示在这里</p>
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left">
+                    <thead>
+                      <tr className="border-b border-slate-700">
+                        <th className="pb-3 pr-4 text-sm font-medium text-slate-400">赛事</th>
+                        <th className="pb-3 pr-4 text-sm font-medium text-slate-400">队长</th>
+                        <th className="pb-3 pr-4 text-sm font-medium text-slate-400">队伍</th>
+                        <th className="pb-3 pr-4 text-sm font-medium text-slate-400">报名时间</th>
+                        <th className="pb-3 pr-4 text-sm font-medium text-slate-400">状态</th>
+                        <th className="pb-3 text-sm font-medium text-slate-400">操作</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {regList.map(reg => (
+                        <tr key={`${reg.hackathonId}_${reg.userId}`} className="border-b border-slate-700/50 hover:bg-slate-800/30">
+                          <td className="py-3 pr-4">
+                            <div className="text-white font-medium">{reg.hackathonTitle}</div>
+                            <div className="text-xs text-slate-500">{reg.region || '-'}</div>
+                          </td>
+                          <td className="py-3 pr-4">
+                            <div className="text-white">{reg.captainName}</div>
+                            <div className="text-xs text-slate-500">{reg.captainPhone} · {reg.captainEmail}</div>
+                          </td>
+                          <td className="py-3 pr-4">
+                            <div className="text-white">{reg.teamName}</div>
+                            <div className="text-xs text-slate-500">{reg.members.length + 1} 人</div>
+                          </td>
+                          <td className="py-3 pr-4 text-slate-400 text-sm">
+                            {new Date(reg.submittedAt).toLocaleString('zh-CN', { hour12: false })}
+                          </td>
+                          <td className="py-3 pr-4">
+                            {reg.status === 'pending' && (
+                              <span className="px-2.5 py-0.5 rounded-full text-xs font-medium text-yellow-400 bg-yellow-500/20">待审核</span>
+                            )}
+                            {reg.status === 'approved' && (
+                              <span className="px-2.5 py-0.5 rounded-full text-xs font-medium text-green-400 bg-green-500/20">已通过</span>
+                            )}
+                            {reg.status === 'rejected' && (
+                              <span className="px-2.5 py-0.5 rounded-full text-xs font-medium text-red-400 bg-red-500/20">已拒绝</span>
+                            )}
+                            {reg.status === 'withdrawn' && (
+                              <span className="px-2.5 py-0.5 rounded-full text-xs font-medium text-slate-400 bg-slate-500/20">已撤销</span>
+                            )}
+                          </td>
+                          <td className="py-3">
+                            {reg.status === 'pending' ? (
+                              <div className="flex items-center gap-2">
+                                <button
+                                  onClick={() => handleApproveRegistration(reg.hackathonId, reg.userId)}
+                                  className="flex items-center gap-1.5 px-3 py-1.5 bg-green-500/20 text-green-400 hover:bg-green-500/30 rounded-lg text-sm font-medium transition-colors"
+                                >
+                                  <UserCheck className="w-4 h-4" />
+                                  通过
+                                </button>
+                                <button
+                                  onClick={() => handleRejectRegistration(reg.hackathonId, reg.userId)}
+                                  className="flex items-center gap-1.5 px-3 py-1.5 bg-red-500/20 text-red-400 hover:bg-red-500/30 rounded-lg text-sm font-medium transition-colors"
+                                >
+                                  <XCircle className="w-4 h-4" />
+                                  拒绝
+                                </button>
+                              </div>
+                            ) : (
+                              <span className="text-xs text-slate-500">已处理</span>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
           </div>
         )}

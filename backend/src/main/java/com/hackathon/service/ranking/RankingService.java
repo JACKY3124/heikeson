@@ -4,31 +4,110 @@ import com.hackathon.config.SecurityUtils;
 import com.hackathon.dto.RankingResponseDTO;
 import com.hackathon.entity.Competition;
 import com.hackathon.entity.Ranking;
+import com.hackathon.entity.Submission;
 import com.hackathon.entity.Team;
 import com.hackathon.entity.TeamMember;
 import com.hackathon.entity.User;
 import com.hackathon.exception.BusinessException;
 import com.hackathon.repository.CompetitionRepository;
 import com.hackathon.repository.RankingRepository;
+import com.hackathon.repository.SubmissionRepository;
 import com.hackathon.repository.TeamMemberRepository;
 import com.hackathon.repository.TeamRepository;
 import com.hackathon.repository.UserRepository;
+import com.hackathon.service.scoring.AiScoringService;
+import com.hackathon.service.scoring.ExpertScoreService;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class RankingService {
+
+    /** AI分权重 */
+    private static final BigDecimal AI_WEIGHT = new BigDecimal("0.40");
+
+    /** 专家分权重 */
+    private static final BigDecimal EXPERT_WEIGHT = new BigDecimal("0.60");
 
     private final RankingRepository rankingRepository;
     private final CompetitionRepository competitionRepository;
+    private final SubmissionRepository submissionRepository;
     private final UserRepository userRepository;
     private final TeamRepository teamRepository;
     private final TeamMemberRepository teamMemberRepository;
+    private final AiScoringService aiScoringService;
+    private final ExpertScoreService expertScoreService;
     private final SecurityUtils securityUtils;
+
+    /**
+     * 生成某赛事的榜单（管理员触发，幂等可重复执行）
+     * - 汇总所有已提交作品的 AI 加权分与专家加权分
+     * - 总分 = AI分×0.4 + 专家分×0.6
+     * - 按总分降序写 rankNo（同分并列）
+     * - 团队作品记 teamId，个人作品记 userId
+     */
+    @Transactional
+    public List<RankingResponseDTO> generateRanking(Long competitionId) {
+        Competition competition = competitionRepository.findById(competitionId)
+                .orElseThrow(() -> new BusinessException("赛事不存在"));
+
+        List<Submission> submissions = submissionRepository
+                .findByCompetitionIdAndStatus(competitionId, "submitted");
+        if (submissions.isEmpty()) {
+            throw new BusinessException("该赛事暂无已提交的作品，无法生成榜单");
+        }
+
+        // 计算每份作品的总分
+        List<Ranking> newRankings = new ArrayList<>();
+        for (Submission s : submissions) {
+            BigDecimal aiScore = aiScoringService.calcWeightedAiScore(s.getId());
+            BigDecimal expertScore = expertScoreService.calcWeightedExpertScore(s.getId());
+            BigDecimal total = aiScore.multiply(AI_WEIGHT)
+                    .add(expertScore.multiply(EXPERT_WEIGHT))
+                    .setScale(2, RoundingMode.HALF_UP);
+
+            Ranking r = new Ranking();
+            r.setCompetitionId(competitionId);
+            r.setUserId(s.getTeamId() != null ? null : s.getUserId());
+            r.setTeamId(s.getTeamId());
+            r.setAiScore(aiScore);
+            r.setExpertScore(expertScore);
+            r.setTotalScore(total);
+            newRankings.add(r);
+        }
+
+        // 按总分降序排序（同分并列）
+        newRankings.sort(Comparator.comparing(Ranking::getTotalScore).reversed());
+        int currentRank = 1;
+        int actualRank = 1;
+        BigDecimal prevScore = null;
+        for (Ranking r : newRankings) {
+            if (prevScore != null && r.getTotalScore().compareTo(prevScore) != 0) {
+                currentRank = actualRank;
+            }
+            r.setRankNo(currentRank);
+            prevScore = r.getTotalScore();
+            actualRank++;
+        }
+
+        // 幂等：清掉旧榜单再写入
+        rankingRepository.deleteAll(rankingRepository.findByCompetitionIdOrderByRankNoAsc(competitionId));
+        rankingRepository.saveAll(newRankings);
+
+        log.info("榜单生成: competitionId={}, 参赛作品数={}", competitionId, newRankings.size());
+        return listCompetitionRanking(competitionId);
+    }
 
     /**
      * 查询我在某赛事的成绩排名
