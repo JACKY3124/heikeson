@@ -123,7 +123,7 @@ public class AdminMiscService {
         // 校验专家用户存在且角色正确
         User expert = userRepository.findById(request.getExpertId())
                 .orElseThrow(() -> new BusinessException("用户不存在"));
-        if (!"expert".equals(expert.getRole())) {
+        if (!"expert".equalsIgnoreCase(expert.getRole())) {
             throw new BusinessException("该用户角色不是专家，当前角色：" + expert.getRole());
         }
 
