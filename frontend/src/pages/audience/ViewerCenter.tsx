@@ -14,7 +14,7 @@ import {
 import { useAppStore } from '@/store';
 
 export default function ViewerCenter() {
-  const { user, hackathons, teams, submissions, scoreRecords, announcements, refreshAnnouncements } = useAppStore();
+  const { user, hackathons, teams, submissions, scoreRecords, announcements, refreshAnnouncements, refreshRankings } = useAppStore();
 
   const commentInputRef = useRef<HTMLInputElement | null>(null);
   const [commentText, setCommentText] = useState('');
@@ -65,6 +65,8 @@ export default function ViewerCenter() {
 
   useEffect(() => {
     handleRefreshAnnouncements();
+    // [API] 尽力而为：拉取公开榜单（无需登录，后端不可用时保持 Mock 数据）
+    void refreshRankings();
   }, []);
 
   const handlePostComment = () => {

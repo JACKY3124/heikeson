@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { Star, Clock, CheckCircle, Users, FileText, Send, History, Search, ExternalLink, Video } from 'lucide-react';
 import { useAppStore } from '@/store';
@@ -6,15 +6,14 @@ import type { ExpertScore, CriteriaScore } from '@/types';
 import { getCompetitionStatus } from '@/utils/helpers';
 
 export default function ExpertReview() {
-  const { isAuthenticated, userRole, user, submissions, users, getPendingReviews, submitExpertScore, getScoreRecord, scoreRecords, teams, hackathons } = useAppStore();
-  
-  // [API] 对接点：页面挂载时获取待评审列表（当前使用 getPendingReviews() 从 store 计算）
-  // 对接后：store 的 getPendingReviews 内部调用 getPendingReviewsAPI()
-  // useEffect(() => {
-  //   if (isExpert) {
-  //     useAppStore.getState().fetchPendingReviews();
-  //   }
-  // }, [isExpert]);
+  const { isAuthenticated, userRole, user, submissions, users, getPendingReviews, submitExpertScore, getScoreRecord, scoreRecords, teams, hackathons, fetchPendingReviews } = useAppStore();
+
+  // [API] 尽力而为：挂载时拉取后端真实待评审列表（无 token 或后端不可用时静默保持 Mock）
+  useEffect(() => {
+    if (userRole === 'expert') {
+      void fetchPendingReviews();
+    }
+  }, [userRole, fetchPendingReviews]);
 
   const [activeView, setActiveView] = useState<'pending' | 'completed'>('pending');
   const [selectedSubmission, setSelectedSubmission] = useState<string | null>(null);

@@ -266,6 +266,16 @@ public class ExpertScoreService {
         return dto;
     }
 
+    /**
+     * 查询某赛事的评分维度列表（专家端提交评分时需要 dimensionId）
+     */
+    @Transactional(readOnly = true)
+    public List<ScoreDimension> listDimensions(Long competitionId) {
+        Competition competition = competitionRepository.findById(competitionId)
+                .orElseThrow(() -> new BusinessException("赛事不存在"));
+        return scoreDimensionRepository.findByCompetitionId(competition.getId());
+    }
+
     private ExpertScoreResponseDTO toDTO(ExpertScore s, ScoreDimension dim, User expert) {
         ExpertScoreResponseDTO dto = new ExpertScoreResponseDTO();
         dto.setId(s.getId());

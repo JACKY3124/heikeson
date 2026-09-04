@@ -31,6 +31,7 @@ import type { User, Hackathon, Team, Submission, LeaderboardEntry, ScoreRecord, 
 import { mockUsers, mockHackathons, mockTeams, mockSubmissions, mockLeaderboard, mockExperts, mockAdmins, mockAnnouncements, mockScoreRecords, mockScoringConfig, mockAdditionalSubmissions } from '@/data/mockData';
 import { simulateAIScoring, calculateWeightedScore, updateScoreRecordWithExpertScore } from '@/utils/scoring';
 import { getAnnouncements } from '@/api';
+import { getMyPendingReviewsAPI, submitExpertScoreAPI, getExpertDimensionsAPI, getCompetitionRankingAPI } from '@/api/expert';
 
 // [API] 对接后端时取消注释：
 // import {
@@ -86,6 +87,10 @@ interface AppState {
   getTeamSubmissions: (teamId: string) => Submission[];
   runAIScoring: (submissionId: string) => void;
   submitExpertScore: (expertScore: ExpertScore) => void;
+  /** [API] 尽力而为：后端可用时拉取真实待评审列表并合并进 store（失败静默，保持 mock） */
+  fetchPendingReviews: () => Promise<void>;
+  /** [API] 尽力而为：拉取公开榜单（无需登录），后端不可用时保持 mock 数据 */
+  refreshRankings: () => Promise<void>;
   getScoreRecord: (submissionId: string) => ScoreRecord | undefined;
   getLeaderboardByHackathon: (hackathonId: string) => LeaderboardEntry[];
   isUserRole: (role: UserRole) => boolean;
@@ -120,13 +125,110 @@ function saveUserSubmissions(list: Submission[]) {
   }
 }
 
+// ============================================
+// 管理员对赛事的增/改/删持久化（关掉重开链接后仍保留）
+// mock 赛事（mockData）为基础，本地改动按 id 覆盖合并，key: hackathon_overrides
+// ============================================
+const HACKATHON_OVERRIDES_KEY = 'hackathon_overrides';
+
+interface HackathonLocalChanges {
+  /** 对 mock 赛事的字段覆盖（编辑保存后整体快照，key 为赛事 id） */
+  edits: Record<string, Partial<Hackathon>>;
+  /** 管理员新建的赛事（保存完整对象） */
+  created: Hackathon[];
+  /** 被管理员删除的 mock 赛事 id */
+  deleted: string[];
+}
+
+function loadHackathonLocalChanges(): HackathonLocalChanges {
+  try {
+    const raw = localStorage.getItem(HACKATHON_OVERRIDES_KEY);
+    if (!raw) return { edits: {}, created: [], deleted: [] };
+    const parsed = JSON.parse(raw);
+    return {
+      edits: parsed.edits || {},
+      created: Array.isArray(parsed.created) ? parsed.created : [],
+      deleted: Array.isArray(parsed.deleted) ? parsed.deleted : [],
+    };
+  } catch {
+    return { edits: {}, created: [], deleted: [] };
+  }
+}
+
+function saveHackathonLocalChanges(changes: HackathonLocalChanges) {
+  try {
+    localStorage.setItem(HACKATHON_OVERRIDES_KEY, JSON.stringify(changes));
+  } catch {
+    // 存储失败静默降级
+  }
+}
+
+/** 合并 mock 基础赛事与本地增改，得到最终赛事列表 */
+function buildHackathons(): Hackathon[] {
+  const { edits, created, deleted } = loadHackathonLocalChanges();
+  const deletedIds = deleted.map(String);
+  const base = mockHackathons
+    .filter(h => !deletedIds.includes(String(h.id)))
+    .map(h => {
+      const override = edits[String(h.id)];
+      return override ? { ...h, ...override } : h;
+    });
+  return [...base, ...created];
+}
+
+// 前端评分维度 criteriaId → 后端评分维度名称关键词映射（用于提交真实评分时匹配 dimensionId）
+const CRITERIA_NAME_KEYWORDS: Record<string, string[]> = {
+  innovation: ['创新', 'innovation'],
+  technical: ['技术', 'technical'],
+  practicality: ['实用', 'practical'],
+  business: ['商业', 'business'],
+};
+
+/**
+ * 尽力而为：把专家评分同步到后端（POST /api/expert/scores，按维度逐条提交）
+ * - 仅当已登录获得 JWT token、且作品/赛事为后端真实数字 id 时才尝试
+ * - 维度通过名称关键词映射（匹配不到时按顺序兜底）
+ * - 任何失败均静默降级，不影响本地 Mock 主链路
+ */
+async function pushExpertScoreToBackend(expertScore: ExpertScore, hackathonId: string) {
+  try {
+    if (!localStorage.getItem('token')) return;
+    const submissionId = Number(expertScore.submissionId);
+    const competitionId = Number(hackathonId);
+    if (!Number.isFinite(submissionId) || submissionId <= 0) return;
+    if (!Number.isFinite(competitionId) || competitionId <= 0) return;
+
+    const dimensions = await getExpertDimensionsAPI(competitionId);
+    if (!Array.isArray(dimensions) || dimensions.length === 0) return;
+
+    for (let i = 0; i < expertScore.scores.length; i++) {
+      const criteria = expertScore.scores[i];
+      const keywords = CRITERIA_NAME_KEYWORDS[criteria.criteriaId] || [];
+      const dimension =
+        dimensions.find(d => keywords.some(kw => String(d.name || '').toLowerCase().includes(kw))) ??
+        dimensions[i];
+      if (!dimension) continue;
+
+      await submitExpertScoreAPI({
+        submissionId,
+        dimensionId: dimension.id,
+        score: criteria.score,
+        comment: expertScore.comment,
+      });
+    }
+  } catch (error) {
+    console.warn('专家评分同步到后端失败（已降级为本地 Mock）', error);
+  }
+}
+
 export const useAppStore = create<AppState>((set, get) => ({
   user: null,
   isAuthenticated: false,
   userRole: 'viewer',
   // [API] 对接点：初始状态应从 API 获取，而非 mock 数据
   // 对接后：hackathons: [], teams: [], submissions: [], 等，然后通过 initializeAppData() 异步加载
-  hackathons: mockHackathons,
+  // 合并 mock 赛事 + 本地增改（管理员改过的结束时间等字段在重开后依然生效）
+  hackathons: buildHackathons(),
   teams: mockTeams,
   joinRequests: [],
   submissions: [...mockSubmissions, ...mockAdditionalSubmissions, ...loadUserSubmissions()],
@@ -262,6 +364,10 @@ export const useAppStore = create<AppState>((set, get) => ({
     set(state => ({
       hackathons: [...state.hackathons, newHackathon],
     }));
+    // 持久化新建赛事，刷新/重开链接后仍保留
+    const changes = loadHackathonLocalChanges();
+    changes.created = [newHackathon, ...changes.created];
+    saveHackathonLocalChanges(changes);
     return newHackathon;
   },
 
@@ -272,6 +378,17 @@ export const useAppStore = create<AppState>((set, get) => ({
         h.id === hackathon.id ? { ...h, ...hackathon } : h
       ),
     }));
+    // 持久化修改：关掉重开链接后新时间依然生效
+    const changes = loadHackathonLocalChanges();
+    const key = String(hackathon.id);
+    if (mockHackathons.some(m => String(m.id) === key)) {
+      changes.edits[key] = { ...changes.edits[key], ...hackathon };
+    } else {
+      changes.created = changes.created.map(c =>
+        String(c.id) === key ? { ...c, ...hackathon } : c
+      );
+    }
+    saveHackathonLocalChanges(changes);
   },
 
   // [API] 对接点：deleteHackathon 应改为 async，调用 deleteHackathonAPI
@@ -282,6 +399,14 @@ export const useAppStore = create<AppState>((set, get) => ({
     set(state => ({
       hackathons: state.hackathons.filter(h => h.id !== id),
     }));
+    // 持久化删除：mock 赛事记删除标记，新建赛事直接移除
+    const changes = loadHackathonLocalChanges();
+    if (mockHackathons.some(m => String(m.id) === id)) {
+      if (!changes.deleted.includes(id)) changes.deleted.push(id);
+    } else {
+      changes.created = changes.created.filter(c => String(c.id) !== id);
+    }
+    saveHackathonLocalChanges(changes);
     return true;
   },
 
@@ -664,6 +789,109 @@ export const useAppStore = create<AppState>((set, get) => ({
       set(state => ({
         scoreRecords: [...state.scoreRecords, newRecord],
       }));
+    }
+
+    // [API] 尽力而为：后端可用（已登录获得 JWT 且作品/赛事为真实数字 id）时，
+    // 按评分维度逐条提交到 POST /api/expert/scores，失败静默降级（不影响本地 Mock 结果）
+    void pushExpertScoreToBackend(expertScore, submission.hackathonId);
+  },
+
+  fetchPendingReviews: async () => {
+    // [API] 尽力而为：真实待评审列表合并进 store（仅追加缺失项，不覆盖 Mock）
+    if (!localStorage.getItem('token')) return;
+    try {
+      const reviews = await getMyPendingReviewsAPI();
+      if (!Array.isArray(reviews) || reviews.length === 0) return;
+      set(state => {
+        const knownIds = new Set(state.submissions.map(s => String(s.id)));
+        const knownTeams = new Set(state.teams.map(t => String(t.id)));
+        const newSubmissions: Submission[] = [];
+        const newTeams: Team[] = [];
+        for (const r of reviews) {
+          if (!r.submissionId || knownIds.has(String(r.submissionId))) continue;
+          const teamId = `remote-team-${r.teamId ?? r.submissionId}`;
+          newSubmissions.push({
+            id: String(r.submissionId),
+            teamId,
+            hackathonId: String(r.competitionId),
+            title: r.title || '未命名作品',
+            description: r.description || '',
+            technology: [],
+            fileUrl: r.fileUrl || undefined,
+            status: 'submitted',
+            createdAt: r.submittedAt || new Date().toISOString(),
+          });
+          if (!knownTeams.has(teamId)) {
+            newTeams.push({
+              id: teamId,
+              name: r.teamName || r.authorName || '参赛团队',
+              description: '',
+              members: [],
+              hackathonId: String(r.competitionId),
+              createdAt: r.submittedAt || new Date().toISOString(),
+              maxMembers: 5,
+              minMembers: 1,
+              leaderId: '',
+            });
+          }
+        }
+        if (newSubmissions.length === 0) return state;
+        return {
+          submissions: [...state.submissions, ...newSubmissions],
+          teams: [...state.teams, ...newTeams],
+        };
+      });
+    } catch (error) {
+      console.warn('拉取真实待评审列表失败，使用本地 Mock 数据', error);
+    }
+  },
+
+  refreshRankings: async () => {
+    // [API] 尽力而为：拉取公开榜单（GET /api/public/rankings/**，无需登录），
+    // 后端不可用时保持 Mock 榜单数据
+    const { hackathons } = get();
+    const numericIds = hackathons
+      .map(h => Number(h.id))
+      .filter(id => Number.isFinite(id) && id > 0);
+    if (numericIds.length === 0) return;
+    try {
+      const results = await Promise.all(
+        numericIds.map(id => getCompetitionRankingAPI(id).catch(() => []))
+      );
+      set(state => {
+        let records = [...state.scoreRecords];
+        results.forEach((entries, idx) => {
+          if (!Array.isArray(entries) || entries.length === 0) return;
+          const hackathonId = String(numericIds[idx]);
+          for (const entry of entries) {
+            const submissionId = entry.id != null ? String(entry.id) : null;
+            if (!submissionId) continue;
+            const finalScore = Number(entry.totalScore ?? 0);
+            const existing = records.find(r => r.submissionId === submissionId);
+            if (existing) {
+              records = records.map(r =>
+                r.submissionId === submissionId
+                  ? { ...r, finalScore, rank: entry.rank ?? entry.rankNo ?? r.rank }
+                  : r
+              );
+            } else {
+              records.push({
+                submissionId,
+                teamId: `remote-team-${entry.teamId ?? submissionId}`,
+                hackathonId,
+                expertScores: [],
+                finalScore,
+                rank: entry.rank ?? entry.rankNo,
+                aiScoreValue: entry.aiScore != null ? Number(entry.aiScore) : undefined,
+                expertScoreValue: entry.expertScore != null ? Number(entry.expertScore) : undefined,
+              });
+            }
+          }
+        });
+        return { scoreRecords: records };
+      });
+    } catch (error) {
+      console.warn('拉取公开榜单失败，使用本地 Mock 数据', error);
     }
   },
 

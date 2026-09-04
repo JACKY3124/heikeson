@@ -39,6 +39,12 @@ public class ExpertScoreController {
         return ApiResponse.success(expertScoreService.submitScore(request));
     }
 
+    /** 查询某赛事的评分维度（专家端提交评分时需要 dimensionId） */
+    @GetMapping("/competitions/{competitionId}/dimensions")
+    public ApiResponse<List<com.hackathon.entity.ScoreDimension>> listDimensions(@PathVariable Long competitionId) {
+        return ApiResponse.success(expertScoreService.listDimensions(competitionId));
+    }
+
     /** 查询我对某作品的全部评分 */
     @GetMapping("/submissions/{submissionId}/my-scores")
     public ApiResponse<List<ExpertScoreResponseDTO>> getMyScores(@PathVariable Long submissionId) {

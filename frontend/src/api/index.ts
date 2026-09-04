@@ -36,6 +36,20 @@ export {
   getAnnouncements,
 } from './announcement';
 
+// ========== 专家评审 / 公开榜单 API ==========
+export {
+  getMyPendingReviewsAPI,
+  submitExpertScoreAPI,
+  getExpertDimensionsAPI,
+  getMyExpertScoresAPI,
+  getCompetitionRankingAPI,
+} from './expert';
+export type {
+  ExpertPendingReview,
+  ExpertScoreRecord,
+  CompetitionRankingEntry,
+} from './expert';
+
 // ========== 团队 API ==========
 export {
   createTeam,
