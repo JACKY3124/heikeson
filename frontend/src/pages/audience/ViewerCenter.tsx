@@ -12,6 +12,7 @@ import {
   RefreshCw,
 } from 'lucide-react';
 import { useAppStore } from '@/store';
+import { getCompetitionStatus } from '@/utils/helpers';
 
 export default function ViewerCenter() {
   const { user, hackathons, teams, submissions, scoreRecords, announcements, refreshAnnouncements, refreshRankings } = useAppStore();
@@ -33,18 +34,17 @@ export default function ViewerCenter() {
     return initial;
   });
   const [likedSubmissions, setLikedSubmissions] = useState<string[]>([]);
-  const [filterStatus, setFilterStatus] = useState<'all' | 'competition_running' | 'registration_open' | 'results_announced'>('all');
+  const [filterStatus, setFilterStatus] = useState<'all' | 'competition_running' | 'registration_open' | 'judging' | 'results_announced'>('all');
 
-  const activeHackathons = hackathons.filter((h) => h.status === 'competition_running');
-  const upcomingHackathons = hackathons.filter((h) => h.status === 'registration_open');
+  const activeHackathons = hackathons.filter((h) => getCompetitionStatus(h) === 'competition_running');
+  const upcomingHackathons = hackathons.filter((h) => getCompetitionStatus(h) === 'registration_open');
 
   const filteredSubmissions = submissions
     .filter((s) => {
       if (filterStatus === 'all') return true;
       const h = hackathons.find((hh) => hh.id === s.hackathonId);
       if (!h) return false;
-      if (filterStatus === 'results_announced') return h.status === 'results_announced';
-      return h.status === filterStatus;
+      return getCompetitionStatus(h) === filterStatus;
     })
     .slice(0, 6);
 
@@ -213,15 +213,16 @@ export default function ViewerCenter() {
                     <div className="flex flex-wrap items-center gap-2">
                       {[
                         { label: '全部作品', value: 'all' },
-                        { label: '进行中', value: 'ongoing' },
-                        { label: '即将开始', value: 'upcoming' },
-                        { label: '完赛回顾', value: 'completed' },
+                        { label: '报名中', value: 'registration_open' },
+                        { label: '进行中', value: 'competition_running' },
+                        { label: '评审中', value: 'judging' },
+                        { label: '已结束', value: 'results_announced' },
                       ].map((item) => (
                         <button
                           key={item.value}
                           type="button"
-                          onClick={() => setFilterStatus(item.value as any)}
-                          className={`inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-medium transition-colors ${filterStatus === (item.value as any) ? 'bg-blue-500 text-white' : 'bg-slate-900/80 text-slate-300 hover:bg-slate-800'}`}
+                          onClick={() => setFilterStatus(item.value as 'all' | 'competition_running' | 'registration_open' | 'judging' | 'results_announced')}
+                          className={`inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-medium transition-colors ${filterStatus === item.value ? 'bg-blue-500 text-white' : 'bg-slate-900/80 text-slate-300 hover:bg-slate-800'}`}
                         >
                           <Filter className="w-4 h-4" />
                           {item.label}

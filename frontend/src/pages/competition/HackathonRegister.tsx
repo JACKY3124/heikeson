@@ -79,6 +79,8 @@ export default function HackathonRegister() {
   const [submitted, setSubmitted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [apiError, setApiError] = useState('');
+  // true = 未登录，仅本地保存（演示模式），需明确告知用户数据未提交到服务器
+  const [demoOnly, setDemoOnly] = useState(false);
 
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<User[]>([]);
@@ -328,7 +330,20 @@ export default function HackathonRegister() {
         };
       });
 
-      // ===== Mock 主链路：本地创建队伍 + 保存报名记录（保证演示成功）=====
+      // ===== 真实后端优先：已登录（有 token）时必须后端写入成功才算报名成功 =====
+      const token = localStorage.getItem('token');
+      if (token) {
+        try {
+          await registerCompetition(hackathon.id as any, registerData);
+        } catch (apiErr: any) {
+          // 后端失败必须让用户看到，不得静默降级为“成功”
+          setSubmitting(false);
+          setApiError(apiErr?.message || '报名提交失败，请稍后重试');
+          return;
+        }
+      }
+
+      // ===== 本地保存：真实链路成功后同步本地；无 token 时为演示模式，仅本地保存 =====
       createTeam(form.teamName, '', String(hackathon.id), teamMembers);
 
       if (hackathon && user) {
@@ -346,16 +361,8 @@ export default function HackathonRegister() {
         });
       }
 
-      // ===== 真实后端尽力而为：有登录 token 才尝试，失败静默降级不阻断 =====
-      if (localStorage.getItem('token')) {
-        try {
-          await registerCompetition(hackathon.id as any, registerData);
-        } catch (apiErr: any) {
-          console.warn('[报名] 后端接口暂不可用，已使用本地 Mock 数据：', apiErr?.message || apiErr);
-        }
-      }
-
       setSubmitting(false);
+      setDemoOnly(!token);
       setSubmitted(true);
     } catch (error: any) {
       setSubmitting(false);
@@ -381,7 +388,13 @@ export default function HackathonRegister() {
               <Clock className="w-4 h-4" />
               等待审核中
             </div>
-            <p className="text-slate-500 text-sm">审核结果将通过邮件通知，请留意邮箱。正在跳转到我的提交页面...</p>
+            {demoOnly ? (
+              <div className="mb-4 p-3 rounded-lg bg-yellow-500/10 border border-yellow-500/30 text-yellow-300 text-sm text-left">
+                当前为演示模式（未登录）：报名信息仅保存在本机浏览器，<span className="font-medium">未提交到服务器</span>，管理员无法看到该申请，也不会发送邮件通知。
+              </div>
+            ) : (
+              <p className="text-slate-500 text-sm">审核结果将通过邮件通知，请留意邮箱。正在跳转到我的提交页面...</p>
+            )}
           </Card>
         </div>
       </div>

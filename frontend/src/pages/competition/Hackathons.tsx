@@ -2,16 +2,17 @@ import { useState } from 'react';
 import { Search, Filter, Calendar, Users, MapPin } from 'lucide-react';
 import { useAppStore } from '@/store';
 import HackathonCard from '@/components/HackathonCard';
+import { getCompetitionStatus } from '@/utils/helpers';
 
 export default function Hackathons() {
   const { hackathons } = useAppStore();
   const [searchQuery, setSearchQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState<'all' | 'registration_open' | 'competition_running' | 'results_announced'>('all');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'registration_open' | 'competition_running' | 'judging' | 'results_announced'>('all');
   const [sortBy, setSortBy] = useState<'date' | 'participants' | 'prize'>('date');
 
   const filteredHackathons = hackathons
     .filter((h) => {
-      if (statusFilter !== 'all' && h.status !== statusFilter) return false;
+      if (statusFilter !== 'all' && getCompetitionStatus(h) !== statusFilter) return false;
       if (searchQuery && !h.title.toLowerCase().includes(searchQuery.toLowerCase()) && !h.description.toLowerCase().includes(searchQuery.toLowerCase())) {
         return false;
       }
@@ -83,9 +84,10 @@ export default function Hackathons() {
                   className="pl-12 pr-8 py-3 bg-slate-800 border border-slate-700 rounded-lg text-white focus:outline-none focus:border-blue-500 transition-colors appearance-none cursor-pointer"
                 >
                   <option value="all">全部状态</option>
-                  <option value="upcoming">即将开始</option>
-                  <option value="ongoing">进行中</option>
-                  <option value="completed">已结束</option>
+                  <option value="registration_open">报名中</option>
+                  <option value="competition_running">进行中</option>
+                  <option value="judging">评审中</option>
+                  <option value="results_announced">已结束</option>
                 </select>
               </div>
               <select

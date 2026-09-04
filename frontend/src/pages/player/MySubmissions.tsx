@@ -65,6 +65,8 @@ export default function MySubmissions() {
   const [deletingSubmission, setDeletingSubmission] = useState<typeof submissions[0] | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [submitSuccess, setSubmitSuccess] = useState(false);
+  // 提交失败原因（此前失败时静默 return，用户点击后毫无反应）
+  const [submitError, setSubmitError] = useState('');
   const [expandedSubmission, setExpandedSubmission] = useState<string | null>(null);
   const [formData, setFormData] = useState<FormData>({
     title: '',
@@ -269,6 +271,7 @@ export default function MySubmissions() {
   const handleSubmit = async () => {
     if (!validateForm()) return;
     setSubmitting(true);
+    setSubmitError('');
 
     try {
       // 从报名记录中查找选中的竞赛信息
@@ -292,10 +295,12 @@ export default function MySubmissions() {
 
       if (!result) {
         setSubmitting(false);
+        setSubmitError('作品提交失败：请确认报名已通过审核、当前处于作品提交阶段，且未重复提交同一竞赛的作品。');
         return;
       }
-    } catch {
+    } catch (err: any) {
       setSubmitting(false);
+      setSubmitError(err?.message || '作品提交失败，请稍后重试');
       return;
     }
 
@@ -957,6 +962,11 @@ export default function MySubmissions() {
                 className="w-full px-4 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:border-blue-500"
               />
             </div>
+            {submitError && (
+              <div className="pt-2 p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-red-300 text-sm">
+                {submitError}
+              </div>
+            )}
             <div className="pt-2">
               <Button onClick={handleSubmit} loading={submitting} className="w-full">
                 <Send className="w-4 h-4 mr-2" />

@@ -4,6 +4,7 @@ import com.hackathon.dto.ApiResponse;
 import com.hackathon.dto.CompetitionRequest;
 import com.hackathon.service.competition.CompetitionService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
@@ -14,6 +15,7 @@ public class CompetitionController {
     private final CompetitionService competitionService;
 
     @PostMapping
+    @PreAuthorize("hasRole('ADMIN')")
     public ApiResponse<?> create(@RequestBody CompetitionRequest request) {
         return ApiResponse.success(competitionService.createCompetition(request));
     }
@@ -29,11 +31,13 @@ public class CompetitionController {
     }
 
     @PutMapping("/{id}")
+    @PreAuthorize("hasRole('ADMIN')")
     public ApiResponse<?> update(@PathVariable Long id, @RequestBody CompetitionRequest request) {
         return ApiResponse.success(competitionService.updateCompetition(id, request));
     }
 
     @DeleteMapping("/{id}")
+    @PreAuthorize("hasRole('ADMIN')")
     public ApiResponse<?> delete(@PathVariable Long id) {
         competitionService.deleteCompetition(id);
         return ApiResponse.success(null);

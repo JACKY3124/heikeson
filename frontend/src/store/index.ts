@@ -86,6 +86,8 @@ interface AppState {
   getSubmissionById: (id: string) => Submission | undefined;
   getTeamSubmissions: (teamId: string) => Submission[];
   runAIScoring: (submissionId: string) => void;
+  /** 保存评分权重配置：写入 store 并持久化，影响 AI 评分与加权总分计算 */
+  setScoringConfig: (config: ScoringConfig) => void;
   submitExpertScore: (expertScore: ExpertScore) => void;
   /** [API] 尽力而为：后端可用时拉取真实待评审列表并合并进 store（失败静默，保持 mock） */
   fetchPendingReviews: () => Promise<void>;
@@ -163,6 +165,34 @@ function saveHackathonLocalChanges(changes: HackathonLocalChanges) {
   }
 }
 
+const SCORING_CONFIG_KEY = 'hackathon_scoring_config';
+
+/** 读取本地评分权重配置；无数据或结构非法时回退 mock 默认配置 */
+function loadScoringConfig(): ScoringConfig {
+  try {
+    const raw = localStorage.getItem(SCORING_CONFIG_KEY);
+    if (!raw) return mockScoringConfig;
+    const parsed = JSON.parse(raw);
+    // 结构校验：避免旧数据/脏数据让 AI 评分与加权总分计算崩溃
+    if (typeof parsed?.aiWeight !== 'number'
+      || typeof parsed?.expertWeight !== 'number'
+      || !Array.isArray(parsed?.criteria)) {
+      return mockScoringConfig;
+    }
+    return parsed as ScoringConfig;
+  } catch {
+    return mockScoringConfig;
+  }
+}
+
+function saveScoringConfig(config: ScoringConfig) {
+  try {
+    localStorage.setItem(SCORING_CONFIG_KEY, JSON.stringify(config));
+  } catch {
+    // 存储失败静默降级（如隐私模式/空间不足）
+  }
+}
+
 /** 合并 mock 基础赛事与本地增改，得到最终赛事列表 */
 function buildHackathons(): Hackathon[] {
   const { edits, created, deleted } = loadHackathonLocalChanges();
@@ -234,7 +264,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   submissions: [...mockSubmissions, ...mockAdditionalSubmissions, ...loadUserSubmissions()],
   leaderboard: mockLeaderboard,
   scoreRecords: mockScoreRecords,
-  scoringConfig: mockScoringConfig,
+  scoringConfig: loadScoringConfig(),
   announcements: mockAnnouncements,
   experts: mockExperts,
   admins: mockAdmins,
@@ -279,8 +309,13 @@ export const useAppStore = create<AppState>((set, get) => ({
     return false;
   },
 
-  // [API] 对接点：logout 应调用 clearToken，清除本地缓存
   logout: () => {
+    // 清除登录凭证，避免切换账号后仍沿用上一账号的 token 访问接口
+    try {
+      localStorage.removeItem('token');
+    } catch {
+      // 存储不可用静默降级
+    }
     set({ user: null, isAuthenticated: false, userRole: 'viewer' });
   },
 
@@ -728,6 +763,11 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   // [API] 对接点：runAIScoring 应改为 async，调用 runAIScoringAPI(submissionId)
   // 删除前端 simulateAIScoring，结果由后端返回
+  setScoringConfig: (config) => {
+    set({ scoringConfig: config });
+    saveScoringConfig(config);
+  },
+
   runAIScoring: (submissionId) => {
     const { submissions, scoringConfig, scoreRecords } = get();
     const submission = submissions.find(s => s.id === submissionId);

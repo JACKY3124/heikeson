@@ -32,6 +32,7 @@ export default function AdminDashboard() {
     scoreRecords,
     scoringConfig,
     runAIScoring,
+    setScoringConfig,
     getLeaderboardByHackathon,
     users,
     user,
@@ -90,7 +91,8 @@ export default function AdminDashboard() {
   };
 
   const handleSaveConfig = () => {
-    setConfig(config);
+    // 写入 store 并持久化：AI 评分与加权总分将立即使用新权重，刷新后依然保留
+    setScoringConfig(config);
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
   };

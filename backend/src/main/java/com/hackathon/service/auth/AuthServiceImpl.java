@@ -46,7 +46,9 @@ public class AuthServiceImpl implements AuthService {
         user.setPassword(passwordEncoder.encode(request.getPassword()));
         user.setNickname(request.getNickname() != null ? request.getNickname() : request.getUsername());
         user.setEmail(request.getEmail());
-        user.setRole(request.getRole() != null ? request.getRole() : "player");
+        // [安全] Bug-008：注册角色固定为 player，不信任客户端传入的 role，杜绝提权为 admin/expert
+        // 专家/管理员账号只能由管理员后台创建（AdminUserService 白名单校验），或后续走独立审批接口
+        user.setRole("player");
         user.setStatus(1);
 
         userRepository.save(user);

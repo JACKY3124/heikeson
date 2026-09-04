@@ -26,6 +26,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
@@ -101,6 +102,20 @@ public class ExpertScoreService {
         if (!"submitted".equals(submission.getStatus())) {
             throw new BusinessException("作品尚未正式提交，不可评分");
         }
+
+        // 校验赛事状态与评分窗口
+        Competition competition = competitionRepository.findById(submission.getCompetitionId())
+                .orElseThrow(() -> new BusinessException("赛事不存在"));
+        if ("draft".equals(competition.getStatus())) {
+            throw new BusinessException("赛事尚未发布，不可评分");
+        }
+        LocalDateTime competitionStart = competition.getStartTime() != null
+                ? competition.getStartTime()
+                : competition.getSubmitStart();
+        if (competitionStart != null && LocalDateTime.now().isBefore(competitionStart)) {
+            throw new BusinessException("比赛尚未开始，不可评分");
+        }
+        // TODO 待业务确认：赛事结束后（或公示后）是否允许继续改分及改分截止时间，确认后在此补充截止时间校验
 
         // 校验专家被分配到该赛事
         competitionExpertRepository.findByCompetitionIdAndExpertId(submission.getCompetitionId(), expertId)
